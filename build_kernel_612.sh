@@ -58,6 +58,7 @@ apply_patch_if_missing 'PHY_ROCKCHIP_NANENG_EDP' "drivers/phy/rockchip/Kconfig" 
 apply_patch_if_missing 'RK3568_EDP' "drivers/gpu/drm/rockchip/analogix_dp-rockchip.c" "0010-drm-analogix-dp-rk3568-and-boe-nv140wum-n44.patch"
 apply_patch_if_missing 'mt7663s_w103d_sanitize_wiphy' "drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c" "0011-mt76-mt7663s-w103d-sanitize-wiphy.patch"
 apply_patch_if_missing 'mt7663s_w103d_vendor_disconnect_bss' "drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c" "0012-mt76-mt7663s-w103d-fix-band-switch-disconnect.patch"
+apply_patch_if_missing 'mt7663s_w103d_sync_vendor_connect' "drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c" "0013-mt76-mt7663s-w103d-tx-ampdu-and-sdio-throughput.patch"
 
 # Keep storage, UART, USB Rootfs, PMIC and display support built into the kernel;
 # keep P4 peripheral drivers (=y/=m) aligned with config-6.12.117-cloudbook.

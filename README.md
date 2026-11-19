@@ -26,7 +26,7 @@
 | **内屏显示** | 京东方 `NV140WUM-N44` (`1920x1200@60Hz`) | ✅ 正常 | `0003` 添加 `659 MHz` VPLL 频点 + `0009` Naneng eDP PHY + `0010` Analogix DP/panel-edp；PWM8 背光 (`GPIO2_D3`) |
 | **GPU 加速** | ARM Mali-G52 r1 (`fde60000`) | ✅ 正常 | 主线 `panfrost` + Mesa `25.0.7` (OpenGL 3.1 / ES 3.1) |
 | **HDMI 输出** | DW-HDMI (`fe0a0000`) | ✅ 就绪 | VOP2 `vp0 -> HDMI` / `vp1 -> eDP` + `i2s0_8ch` HDMI 音频 |
-| **Wi-Fi** | MediaTek MT7663S SDIO (`037a:7603`) | ✅ 正常 | `0005` 隔离驱动 + `0007` 速率上报 + `0011` 屏蔽 P2P/ROC/sched_scan + `0012` 修复 2.4G→5G 切频认证超时与断连状态同步；标准 `CMD11` SDR104 |
+| **Wi-Fi** | MediaTek MT7663S SDIO (`037a:7603`) | ✅ 正常 | `0005` 隔离驱动 + `0007` 速率上报 + `0011` 屏蔽 P2P/ROC/sched_scan + `0012` 修复 2.4G→5G 切频认证超时 + `0013` 启用 2.4G/5G 固件 RA 与 TX A-MPDU 并优化 SDIO 吞吐；标准 `CMD11` SDR104 |
 | **蓝牙** | MediaTek MT7663S SDIO (`037a:7663`) | ✅ 正常 | `btmtksdio` + `0006` 共享 eFuse 生命周期协调 + BlueZ |
 | **键盘 / 触控板** | SINO WEALTH (`258a:0001`) / I2C-HID (`0911:5288`) | ✅ 正常 | USB3 Host + `GPIO0_C7` 供电；触控板双 GPIO 上电时序 (`GPIO3_B4` → `10ms` → `GPIO3_A1`) + libinput 轻触点击 |
 | **音频** | RK809 Codec + 3.5mm 耳机 + PDM 数字麦 | ✅ 正常 | 扬声器 (`GPIO3_C3`)、耳机检测 (`GPIO3_C2`) 与耳放 (`GPIO0_C3`)、PDM 麦 (`GPIO2_D6`) |
@@ -47,7 +47,7 @@
 ├── mainline-6.12/
 │   ├── config-6.12.117-cloudbook          # 已验证的 Linux 6.12.117 内核配置
 │   ├── rk3568-ecloudbook-air-24rtw*.dts   # 分层演进 DTS 源码（最终入口为 v29-emmc-rootfs.dts）
-│   ├── patches/                           # 完整内核补丁序列 (0001 ~ 0012)
+│   ├── patches/                           # 完整内核补丁序列 (0001 ~ 0013)
 │   ├── README.md & TESTPLAN.md            # 6.12 构建与验收边界说明
 ├── docs/
 │   ├── board-profile.md                   # 硬件事实源与外设状态矩阵

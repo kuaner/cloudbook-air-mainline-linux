@@ -1,0 +1,666 @@
+From: CloudBook Air Linux Port <port@cloudbookair.local>
+Subject: [PATCH] mt76: mt7663s: enable firmware TX A-MPDU/RA on 2.4/5 GHz and optimize SDIO TX/RX
+
+Enable hardware/firmware TX A-MPDU aggregation and firmware rate control
+on MT7663S (W103D / V3 N9 firmware) across both 2.4 GHz and 5 GHz while
+optimizing SDIO TX/RX quota polling:
+
+1. SDIO TX/RX path (mt7663s_txrx.c, mt7663s_w103d.h, mt7663s_w103d.c):
+   - Increase W103D_TX_WORKER_ROUNDS from 8 to 16, tighten backoff to
+     usleep_range(50, 100), reduce W103D_QUOTA_WATCHDOG_MS to 1 ms, and
+     raise W103D_TX_QUOTA_RETRY_MAX to 4.
+   - Replace word-by-word WTQCR reads with a 20-byte sdio_memcpy_fromio()
+     burst and simplify tx_quota_empty().
+
+2. Firmware RA & TX A-MPDU for unicast QoS data (mt7663s_w103d.c):
+   - Clear MT_TXD2_FIX_RATE and MT_TXD2_BA_DISABLE and zero txwi[6] for
+     unicast QoS data (excluding USE_MINRATE control/EAPOL frames) on both
+     5 GHz and 2.4 GHz so N9 firmware RA and hardware A-MPDU own TX.
+   - Sync connected BSS/STA state to N9 on association and bandwidth change
+     in gen4m order (CMD 0x12 UPDATE_BSS_INFO conn_state=0 -> CMD 0x19
+     BSS_RLM -> CMD 0x13 STA_STATE_3) with RCU-safe record construction.
+
+3. Online scan & hot-reload stability (mt7663s_w103d.c):
+   - Transition N9 BSS 0 transiently to conn_state=1 in hw_scan(), drop
+     unbalanced MCU_EVENT_BSS_ABSENCE (0x11) events (which V3 firmware
+     emits with is_absent=1 on scan without a matching resume), wake TX
+     queues on SCAN_DONE/disconnect, and re-acquire 5 GHz channel
+     privilege + connected BSS/STA state via scan_restore_work.
+   - Guard wiphy->reg_notifier until mcu_ops and MT76_STATE_MCU_RUNNING
+     are ready so rmmod/modprobe with a cached country regdomain cannot
+     dereference NULL mcu_ops.
+---
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_txrx.c b/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_txrx.c
+index 2ef3db3..a83fb78 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_txrx.c
++++ b/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_txrx.c
+@@ -22,7 +22,7 @@
+ #include "mt7663s_w103d.h"
+ 
+ #define W103D_TX_FRAMES_PER_QUEUE 32
+-#define W103D_TX_WORKER_ROUNDS 8
++#define W103D_TX_WORKER_ROUNDS 16
+ 
+ static int mt76s_refill_sched_quota(struct mt76_dev *dev, u32 *data)
+ {
+@@ -363,7 +363,7 @@ static int mt76s_tx_run_queue(struct mt76_dev *dev, struct mt76_queue *q)
+ 					&ple_sz)) {
+ 			if (!polled) {
+ 				polled = true;
+-				if (mt7663s_w103d_poll_tx_quota(dev) > 0 &&
++				if (mt7663s_w103d_read_tx_quota(dev) > 0 &&
+ 				    !mt76s_tx_pick_quota(sdio, mcu, e->buf_sz,
+ 							 &pse_sz, &ple_sz))
+ 					goto quota_ok;
+@@ -448,7 +448,7 @@ void mt7663s_w103d_txrx_worker_core(struct mt76_dev *dev)
+ 		if (!nframes && !mt7663s_w103d_txqs_empty(dev) &&
+ 		    tx_retries < W103D_TX_QUOTA_RETRY_MAX) {
+ 			tx_retries++;
+-			usleep_range(100, 200);
++			usleep_range(50, 100);
+ 			ret = mt76s_rx_handler(dev);
+ 			if (ret > 0)
+ 				nframes += ret;
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c b/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c
+index d43e108..e41bbbf 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c
++++ b/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c
+@@ -52,7 +52,8 @@ struct mt7663s_w103d_intr_state {
+ 	struct mt7663s_intr dispatch __aligned(ARCH_DMA_MINALIGN);
+ 	struct mt7663s_intr poll_buf __aligned(ARCH_DMA_MINALIGN);
+ 	u16 rx_num_buf[2] __aligned(ARCH_DMA_MINALIGN);
+-	bool pending_valid;
++	u32 wtqcr_buf[8] __aligned(ARCH_DMA_MINALIGN);
++	bool pending_valid __aligned(ARCH_DMA_MINALIGN);
+ 	bool worker_active;
+ 	bool quota_stopping;
+ 	bool eeprom_settle_pending;
+@@ -67,7 +68,11 @@ struct mt7663s_w103d_intr_state {
+ 	struct completion fw_scan_done;
+ 	atomic_t irq_queued;
+ 	struct delayed_work quota_work;
++	struct work_struct scan_restore_work;
++	struct ieee80211_vif *assoc_vif;
+ 	struct mt76_dev *mdev;
++	void (*orig_regd_notifier)(struct wiphy *wiphy,
++				   struct regulatory_request *request);
+ };
+ 
+ struct mt7663s_w103d_poll {
+@@ -106,6 +111,7 @@ mt7663s_w103d_intr_state(struct mt76_dev *mdev)
+ }
+ 
+ static void mt7663s_w103d_quota_work(struct work_struct *work);
++static void mt7663s_w103d_scan_restore_work(struct work_struct *work);
+ 
+ int mt7663s_w103d_init_intr(struct mt76_dev *mdev)
+ {
+@@ -121,6 +127,7 @@ int mt7663s_w103d_init_intr(struct mt76_dev *mdev)
+ 	atomic_set(&state->irq_queued, 0);
+ 	state->mdev = mdev;
+ 	INIT_DELAYED_WORK(&state->quota_work, mt7663s_w103d_quota_work);
++	INIT_WORK(&state->scan_restore_work, mt7663s_w103d_scan_restore_work);
+ 	mdev->sdio.intr_data = state;
+ 
+ 	dev_info(mdev->dev,
+@@ -554,9 +561,11 @@ void mt7663s_w103d_deinit_intr(struct mt76_dev *mdev)
+ 
+ 	spin_lock_irqsave(&state->lock, flags);
+ 	WRITE_ONCE(state->quota_stopping, true);
++	WRITE_ONCE(state->assoc_vif, NULL);
+ 	spin_unlock_irqrestore(&state->lock, flags);
+ 	/* Never wait under state->lock: a running callback can wake a producer. */
+ 	cancel_delayed_work_sync(&state->quota_work);
++	cancel_work_sync(&state->scan_restore_work);
+ }
+ 
+ static bool mt7663s_w103d_tx_quota_empty(struct mt76_dev *mdev)
+@@ -564,13 +573,20 @@ static bool mt7663s_w103d_tx_quota_empty(struct mt76_dev *mdev)
+ 	struct mt76_sdio *sdio = &mdev->sdio;
+ 	bool data_queued = false;
+ 	bool mcu_queued = false;
++	int min_pse = W103D_TX_PAGE_PER_FRAME;
+ 	int i;
+ 
+ 	for (i = 0; i <= MT_TXQ_PSD; i++) {
+-		if (mdev->phy.q_tx[i] &&
+-		    mdev->phy.q_tx[i]->first != mdev->phy.q_tx[i]->head) {
++		struct mt76_queue *q = mdev->phy.q_tx[i];
++
++		if (q && q->first != q->head) {
++			int pse_sz = DIV_ROUND_UP(q->entry[q->first].buf_sz +
++						  sdio->sched.deficit,
++						  sdio->sched.pse_page_size);
++
+ 			data_queued = true;
+-			break;
++			if (pse_sz > min_pse)
++				min_pse = pse_sz;
+ 		}
+ 	}
+ 	if (mdev->q_mcu[MT_MCUQ_WM])
+@@ -578,7 +594,7 @@ static bool mt7663s_w103d_tx_quota_empty(struct mt76_dev *mdev)
+ 			     mdev->q_mcu[MT_MCUQ_WM]->head;
+ 
+ 	return (data_queued &&
+-		(sdio->sched.pse_data_quota < W103D_TX_PAGE_PER_FRAME ||
++		(sdio->sched.pse_data_quota < min_pse ||
+ 		 !sdio->sched.ple_data_quota)) ||
+ 	       (mcu_queued && !sdio->sched.pse_mcu_quota);
+ }
+@@ -608,37 +624,37 @@ static int mt7663s_w103d_refill_quota(struct mt76_sdio *sdio, u32 *data)
+ 	return pse_total + ple_total + pse_mcu;
+ }
+ 
+-static int mt7663s_w103d_read_tx_quota(struct mt76_dev *mdev)
++int mt7663s_w103d_read_tx_quota(struct mt76_dev *mdev)
+ {
+ 	struct mt76_sdio *sdio = &mdev->sdio;
+-	u32 wtqcr[8];
+-	int i, credits, err = 0;
++	struct mt7663s_w103d_intr_state *state = mt7663s_w103d_intr_state(mdev);
++	u32 *wtqcr;
++	int credits, err;
++
++	if (!state)
++		return 0;
++
++	wtqcr = state->wtqcr_buf;
++	memset(wtqcr, 0, 5 * sizeof(u32));
+ 
+-	/* Check WTQCR once without sleeping so that pending RX traffic
+-	 * (including TCP ACKs) is never starved in the worker.
++	/* Read WTQCR0..4 (all PSE/PLE/MCU TX release counters) in a single
++	 * incrementing-address CMD53 burst instead of 8 separate sdio_readl()
++	 * transactions.
+ 	 */
+-	memset(wtqcr, 0, sizeof(wtqcr));
+ 	sdio_claim_host(sdio->func);
+-	for (i = 0; i < ARRAY_SIZE(wtqcr); i++) {
+-		u32 value = sdio_readl(sdio->func, MCR_WTQCR(i), &err);
++	err = sdio_memcpy_fromio(sdio->func, wtqcr, MCR_WTQCR0,
++				 5 * sizeof(u32));
++	sdio_release_host(sdio->func);
+ 
+-		if (err)
+-			break;
+-		/* sdio_readl returns ~0 on failure, which is not a credit count. */
+-		wtqcr[i] = value;
++	if (err) {
++		dev_warn_ratelimited(mdev->dev,
++				     "W103D: WTQCR burst read failed: %d\n",
++				     err);
++		return err;
+ 	}
+-	sdio_release_host(sdio->func);
+ 
+-	/* WTQCR is read-clear. Even if a bus error occurred on later registers,
+-	 * refill any non-zero credits already read from preceding registers so
+-	 * credits are never leaked.
+-	 */
+ 	credits = mt7663s_w103d_refill_quota(sdio, wtqcr);
+-	if (err)
+-		dev_warn_ratelimited(mdev->dev, "W103D: WTQCR%d read failed: %d\n",
+-				     i, err);
+-
+-	return err ? err : credits;
++	return credits;
+ }
+ 
+ int mt7663s_w103d_poll_tx_quota(struct mt76_dev *mdev)
+@@ -1112,11 +1128,11 @@ static u8 mt7663s_w103d_vendor_vht_opmode(struct ieee80211_sta *sta)
+ 	return width | ((max_t(u8, sta->deflink.rx_nss, 1) - 1) << 4);
+ }
+ 
+-static int
+-mt7663s_w103d_vendor_activate_sta(struct mt7615_dev *dev,
+-					 struct mt7615_phy *phy,
+-					 struct ieee80211_vif *vif,
+-					 struct ieee80211_sta *sta)
++static void
++mt7663s_w103d_fill_vendor_sta_record(struct mt7615_phy *phy,
++				     struct ieee80211_vif *vif,
++				     struct ieee80211_sta *sta,
++				     struct mt7663s_w103d_vendor_sta_record *req)
+ {
+ 	struct mt7615_vif *mvif = (struct mt7615_vif *)vif->drv_priv;
+ 	struct mt7615_sta *msta = (struct mt7615_sta *)sta->drv_priv;
+@@ -1130,7 +1146,8 @@ mt7663s_w103d_vendor_activate_sta(struct mt7615_dev *dev,
+ 	u16 basic_rates = mt7663s_w103d_vendor_rate_set(
+ 		vif->bss_conf.basic_rates, band);
+ 	u8 uapsd_queues = sta->uapsd_queues & 0xf;
+-	struct mt7663s_w103d_vendor_sta_record req = {
++
++	*req = (struct mt7663s_w103d_vendor_sta_record){
+ 		.sta_idx = msta->wcid.idx,
+ 		/* STA_TYPE_LEGACY_AP = BIT(0) | BIT(6). */
+ 		.sta_type = BIT(0) | BIT(6),
+@@ -1172,22 +1189,46 @@ mt7663s_w103d_vendor_activate_sta(struct mt7615_dev *dev,
+ 		.rx_amsdu_in_ampdu = vht->vht_supported,
+ 		.tx_max_amsdu_in_ampdu_len = cpu_to_le32(4096),
+ 	};
+-	int ret;
+ 
+-	memcpy(req.mac_addr, sta->addr, ETH_ALEN);
+-	memcpy(req.rx_mcs_bitmask, ht->mcs.rx_mask,
+-	       sizeof(req.rx_mcs_bitmask));
++	memcpy(req->mac_addr, sta->addr, ETH_ALEN);
++	memcpy(req->rx_mcs_bitmask, ht->mcs.rx_mask,
++	       sizeof(req->rx_mcs_bitmask));
++}
++
++static int
++mt7663s_w103d_send_vendor_sta_record(struct mt7615_dev *dev,
++				     const struct mt7663s_w103d_vendor_sta_record *req,
++				     bool verbose)
++{
++	int ret;
+ 
+ 	ret = mt76_mcu_send_msg(&dev->mt76,
+ 		MCU_CMD_VENDOR_SET(MCU_CMD_VENDOR_UPDATE_STA_RECORD),
+-		&req, sizeof(req), true);
+-	dev_info(dev->mt76.dev,
+-		 "W103D: vendor STA_STATE_3 idx=%u bss=%u wlan=%u ampdu=1/1 result=%d\n",
+-		 req.sta_idx, req.bss_idx, req.wlan_idx, ret);
++		req, sizeof(*req), true);
++	if (verbose)
++		dev_info(dev->mt76.dev,
++			 "W103D: vendor STA_STATE_3 idx=%u bss=%u wlan=%u ampdu=1/1 result=%d\n",
++			 req->sta_idx, req->bss_idx, req->wlan_idx, ret);
++	else
++		dev_dbg(dev->mt76.dev,
++			"W103D: vendor STA_STATE_3 idx=%u bss=%u wlan=%u ampdu=1/1 result=%d\n",
++			req->sta_idx, req->bss_idx, req->wlan_idx, ret);
+ 
+ 	return ret;
+ }
+ 
++static int
++mt7663s_w103d_vendor_activate_sta(struct mt7615_dev *dev,
++				  struct mt7615_phy *phy,
++				  struct ieee80211_vif *vif,
++				  struct ieee80211_sta *sta)
++{
++	struct mt7663s_w103d_vendor_sta_record req;
++
++	mt7663s_w103d_fill_vendor_sta_record(phy, vif, sta, &req);
++	return mt7663s_w103d_send_vendor_sta_record(dev, &req, true);
++}
++
+ static int mt7663s_w103d_vendor_remove_sta(struct mt7615_dev *dev,
+ 					   struct ieee80211_vif *vif,
+ 					   struct ieee80211_sta *sta)
+@@ -1533,13 +1574,11 @@ static int mt7663s_w103d_channel_privilege(struct mt7615_dev *dev,
+ 					   struct cfg80211_chan_def *chandef,
+ 					   bool request);
+ 
+-static void
+-mt7663s_w103d_vendor_disconnect_bss(struct mt7615_dev *dev,
+-				    struct ieee80211_vif *vif)
++static int
++mt7663s_w103d_send_bss_disconn(struct mt7615_dev *dev,
++			       struct ieee80211_vif *vif)
+ {
+ 	struct mt7615_vif *mvif = (struct mt7615_vif *)vif->drv_priv;
+-	struct mt7663s_w103d_intr_state *state =
+-		mt7663s_w103d_intr_state(&dev->mt76);
+ 	struct mt7663s_w103d_vendor_bss_info req = {
+ 		.bss_idx = mvif->mt76.idx,
+ 		/* PARAM_MEDIA_STATE_DISCONNECTED in gen4m ABI */
+@@ -1556,14 +1595,25 @@ mt7663s_w103d_vendor_disconnect_bss(struct mt7615_dev *dev,
+ 		.wmm_set = mvif->mt76.wmm_idx,
+ 		.nss = max_t(u8, hweight8(dev->mphy.antenna_mask), 1),
+ 	};
++
++	return mt76_mcu_send_msg(&dev->mt76,
++				 MCU_CMD_VENDOR_SET(MCU_CMD_VENDOR_UPDATE_BSS_INFO),
++				 &req, sizeof(req), false);
++}
++
++static void
++mt7663s_w103d_vendor_disconnect_bss(struct mt7615_dev *dev,
++				    struct ieee80211_vif *vif)
++{
++	struct mt7615_vif *mvif = (struct mt7615_vif *)vif->drv_priv;
++	struct mt7663s_w103d_intr_state *state =
++		mt7663s_w103d_intr_state(&dev->mt76);
+ 	int upd_ret, deact_ret;
+ 
+ 	if (state && xchg(&state->join_privilege_held, false))
+ 		mt7663s_w103d_channel_privilege(dev, &dev->mphy.chandef, false);
+ 
+-	upd_ret = mt76_mcu_send_msg(&dev->mt76,
+-				    MCU_CMD_VENDOR_SET(MCU_CMD_VENDOR_UPDATE_BSS_INFO),
+-				    &req, sizeof(req), false);
++	upd_ret = mt7663s_w103d_send_bss_disconn(dev, vif);
+ 	deact_ret = mt7663s_w103d_vendor_bss_activate(dev, vif, false);
+ 
+ 	dev_info(dev->mt76.dev,
+@@ -1571,6 +1621,116 @@ mt7663s_w103d_vendor_disconnect_bss(struct mt7615_dev *dev,
+ 		 mvif->mt76.idx, upd_ret, deact_ret);
+ }
+ 
++/* Synchronize connected BSS and STA records to N9 in the gen4m order
++ * (CMD 0x12 BSS_INFO -> CMD 0x19 BSS_RLM -> CMD 0x13 STA_REC) so N9's
++ * internal rate control unlocks full channel width, NSS, and TX A-MPDU.
++ */
++static void
++mt7663s_w103d_sync_vendor_connect(struct mt7615_dev *dev,
++				  struct ieee80211_vif *vif)
++{
++	struct mt76_phy *mphy = &dev->mphy;
++	struct mt7615_vif *mvif = (struct mt7615_vif *)vif->drv_priv;
++	struct mt7663s_w103d_vendor_bss_info bss_req = {};
++	struct mt7663s_w103d_vendor_sta_record sta_req;
++	struct ieee80211_sta *sta;
++	enum nl80211_band band;
++	bool has_sta = false;
++	u8 sta_idx = 1;
++	u8 phy_type_set = 0;
++	int ret;
++
++	if (!vif->cfg.assoc || vif->type != NL80211_IFTYPE_STATION ||
++	    !mphy->chandef.chan)
++		return;
++
++	band = mphy->chandef.chan->band;
++
++	rcu_read_lock();
++	sta = ieee80211_find_sta(vif, vif->bss_conf.bssid);
++	if (sta) {
++		struct mt7615_sta *msta = (struct mt7615_sta *)sta->drv_priv;
++
++		sta_idx = msta->wcid.idx;
++		phy_type_set = (band == NL80211_BAND_5GHZ ? 0x08 : 0x03);
++		if (sta->deflink.ht_cap.ht_supported)
++			phy_type_set |= 0x10;
++		if (sta->deflink.vht_cap.vht_supported)
++			phy_type_set |= 0x20;
++		mt7663s_w103d_fill_vendor_sta_record(&dev->phy, vif, sta,
++						     &sta_req);
++		has_sta = true;
++	}
++	rcu_read_unlock();
++
++	bss_req.bss_idx = mvif->mt76.idx;
++	bss_req.conn_state = 0;
++	bss_req.op_mode = 1;
++	if (vif->cfg.ssid_len <= sizeof(bss_req.ssid)) {
++		bss_req.ssid_len = vif->cfg.ssid_len;
++		memcpy(bss_req.ssid, vif->cfg.ssid, vif->cfg.ssid_len);
++	}
++	memcpy(bss_req.bssid, vif->bss_conf.bssid, ETH_ALEN);
++	bss_req.is_qbss = vif->bss_conf.qos;
++	bss_req.basic_rate_set = cpu_to_le16(mt7663s_w103d_vendor_rate_set(
++		vif->bss_conf.basic_rates, band));
++	bss_req.op_rate_set = bss_req.basic_rate_set;
++	bss_req.sta_rec_idx_ap = sta_idx;
++	bss_req.non_ht_basic_phy_type = (band == NL80211_BAND_5GHZ ? 4 : 1);
++	bss_req.phy_type_set = phy_type_set;
++	bss_req.bmc_wlan_idx = mvif->sta.wcid.idx ? mvif->sta.wcid.idx : 1;
++	mt7663s_w103d_fill_bss_rlm(mphy, vif, &bss_req.rlm);
++	bss_req.dbdc_band = 4;
++	bss_req.wmm_set = mvif->mt76.wmm_idx;
++	bss_req.nss = max_t(u8, hweight8(mphy->antenna_mask), 1);
++
++	mt7615_mutex_acquire(dev);
++	ret = mt76_mcu_send_msg(&dev->mt76,
++				MCU_CMD_VENDOR_SET(MCU_CMD_VENDOR_UPDATE_BSS_INFO),
++				&bss_req, sizeof(bss_req), false);
++	dev_dbg(dev->mt76.dev,
++		"W103D: vendor BSS connect bss=%u sta=%u vht_w=%u seg1=%u nss=%u ret=%d\n",
++		bss_req.bss_idx, sta_idx, bss_req.rlm.vht_width,
++		bss_req.rlm.center_seg1, bss_req.nss, ret);
++
++	ret = mt7663s_w103d_sync_bss_rlm(dev, vif);
++	if (ret)
++		dev_warn(dev->mt76.dev,
++			 "W103D: failed to sync BSS channel: %d\n", ret);
++
++	if (has_sta)
++		mt7663s_w103d_send_vendor_sta_record(dev, &sta_req, false);
++	mt7615_mutex_release(dev);
++}
++
++static void mt7663s_w103d_scan_restore_work(struct work_struct *work)
++{
++	struct mt7663s_w103d_intr_state *state =
++		container_of(work, struct mt7663s_w103d_intr_state, scan_restore_work);
++	struct mt76_dev *mdev = state->mdev;
++	struct mt7615_dev *dev = container_of(mdev, struct mt7615_dev, mt76);
++	struct ieee80211_vif *vif = READ_ONCE(state->assoc_vif);
++
++	if (!vif || !vif->cfg.assoc || READ_ONCE(state->quota_stopping))
++		return;
++
++	if (dev->mphy.chandef.chan &&
++	    dev->mphy.chandef.chan->band == NL80211_BAND_5GHZ &&
++	    !xchg(&state->join_privilege_held, true)) {
++		mt7663s_w103d_channel_privilege(dev, &dev->mphy.chandef, true);
++		msleep(50);
++	}
++
++	if (READ_ONCE(state->bss_deactivated)) {
++		mt7615_mutex_acquire(dev);
++		mt7663s_w103d_vendor_bss_activate(dev, vif, true);
++		mt7615_mutex_release(dev);
++	}
++
++	mt7663s_w103d_sync_vendor_connect(dev, vif);
++	dev_dbg(mdev->dev, "W103D: restored connected BSS/STA after scan\n");
++}
++
+ void mt7663s_w103d_note_assoc(struct ieee80211_hw *hw,
+ 			      struct ieee80211_vif *vif, u64 changed)
+ {
+@@ -1582,6 +1742,11 @@ void mt7663s_w103d_note_assoc(struct ieee80211_hw *hw,
+ 
+ 	if ((changed & BSS_CHANGED_ASSOC) && !vif->cfg.assoc &&
+ 	    vif->type == NL80211_IFTYPE_STATION) {
++		if (state) {
++			WRITE_ONCE(state->assoc_vif, NULL);
++			cancel_work_sync(&state->scan_restore_work);
++		}
++		ieee80211_wake_queues(hw);
+ 		mt7615_mutex_acquire(dev);
+ 		mt7663s_w103d_vendor_disconnect_bss(dev, vif);
+ 		mt7615_mutex_release(dev);
+@@ -1592,10 +1757,17 @@ void mt7663s_w103d_note_assoc(struct ieee80211_hw *hw,
+ 	    (changed & (BSS_CHANGED_ASSOC | BSS_CHANGED_BANDWIDTH |
+ 			BSS_CHANGED_HT | BSS_CHANGED_ERP_SLOT |
+ 			BSS_CHANGED_ERP_PREAMBLE | BSS_CHANGED_ERP_CTS_PROT))) {
+-		ret = mt7663s_w103d_sync_bss_rlm(dev, vif);
+-		if (ret)
+-			dev_warn(dev->mt76.dev,
+-				 "W103D: failed to sync BSS channel: %d\n", ret);
++		if (state && vif->type == NL80211_IFTYPE_STATION)
++			WRITE_ONCE(state->assoc_vif, vif);
++		if (vif->type == NL80211_IFTYPE_STATION &&
++		    (changed & (BSS_CHANGED_ASSOC | BSS_CHANGED_BANDWIDTH))) {
++			mt7663s_w103d_sync_vendor_connect(dev, vif);
++		} else {
++			ret = mt7663s_w103d_sync_bss_rlm(dev, vif);
++			if (ret)
++				dev_warn(dev->mt76.dev,
++					 "W103D: failed to sync BSS channel: %d\n", ret);
++		}
+ 	}
+ 
+ 	if (state && (changed & BSS_CHANGED_ASSOC) && vif->cfg.assoc &&
+@@ -1632,6 +1804,11 @@ static void mt7663s_w103d_note_scan_done(struct mt76_dev *mdev)
+ 	state->fw_scan_pending = false;
+ 	complete_all(&state->fw_scan_done);
+ 	spin_unlock_irqrestore(&state->lock, flags);
++
++	ieee80211_wake_queues(mdev->hw);
++
++	if (READ_ONCE(state->assoc_vif) && !READ_ONCE(state->quota_stopping))
++		schedule_work(&state->scan_restore_work);
+ }
+ 
+ static void mt7663s_w103d_wait_fw_scan(struct mt76_dev *mdev)
+@@ -1697,6 +1874,12 @@ int mt7663s_w103d_hw_scan(struct ieee80211_hw *hw,
+ 		 * Probe Request TX uses a valid activated BSS/OMAC slot.
+ 		 */
+ 		mt7663s_w103d_vendor_bss_activate(dev, vif, true);
++	} else {
++		/* Tell N9's scan engine BSS 0 is transiently disconnected so
++		 * off-channel scanning does not pause BSS 0 TX or leave ACKs
++		 * wedged until scan_restore_work re-syncs the connected state.
++		 */
++		mt7663s_w103d_send_bss_disconn(dev, vif);
+ 	}
+ 	mt7663s_w103d_mark_scan_pending(&dev->mt76);
+ 	ret = mt76_connac_mcu_hw_scan(mphy, vif, req);
+@@ -1795,15 +1978,41 @@ void mt7663s_w103d_sanitize_wiphy(struct mt76_dev *mdev)
+ 	wiphy->max_sched_scan_reqs = 0;
+ }
+ 
++static void mt7663s_w103d_regd_notifier(struct wiphy *wiphy,
++					struct regulatory_request *request)
++{
++	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
++	struct mt7615_dev *dev = mt7615_hw_dev(hw);
++	struct mt7663s_w103d_intr_state *state =
++		mt7663s_w103d_intr_state(&dev->mt76);
++
++	if (!dev->mt76.mcu_ops ||
++	    !test_bit(MT76_STATE_MCU_RUNNING, &dev->mphy.state)) {
++		memcpy(dev->mt76.alpha2, request->alpha2,
++		       sizeof(dev->mt76.alpha2));
++		dev->mt76.region = request->dfs_region;
++		return;
++	}
++
++	if (state && state->orig_regd_notifier)
++		state->orig_regd_notifier(wiphy, request);
++}
++
+ int mt7663s_w103d_init_wiphy(struct mt76_dev *mdev)
+ {
+ 	struct wiphy *wiphy = mdev->hw->wiphy;
++	struct mt7663s_w103d_intr_state *state = mt7663s_w103d_intr_state(mdev);
+ 
+ 	wiphy->interface_modes &= ~(BIT(NL80211_IFTYPE_P2P_CLIENT) |
+ 				    BIT(NL80211_IFTYPE_P2P_GO) |
+ 				    BIT(NL80211_IFTYPE_P2P_DEVICE));
+ 	wiphy->iface_combinations = w103d_if_comb;
+ 	wiphy->n_iface_combinations = ARRAY_SIZE(w103d_if_comb);
++	if (state && wiphy->reg_notifier &&
++	    wiphy->reg_notifier != mt7663s_w103d_regd_notifier) {
++		state->orig_regd_notifier = wiphy->reg_notifier;
++		wiphy->reg_notifier = mt7663s_w103d_regd_notifier;
++	}
+ 	mt7663s_w103d_sanitize_wiphy(mdev);
+ 
+ 	dev_info(mdev->dev,
+@@ -2128,16 +2337,22 @@ mt7663s_w103d_fix_5g_tx_rate(struct mt7615_dev *dev,
+ 	rateval = mt7663s_w103d_tx_rate_val(&dev->mphy, &rate,
+ 					    info->flags & IEEE80211_TX_CTL_STBC,
+ 					    &bw);
+-	txwi[2] |= cpu_to_le32(MT_TXD2_FIX_RATE);
+ 	/* mac80211 does not mark packets as AMPDU when the V3 firmware owns BA,
+-	 * so the shared TXWI writer sets BA_DISABLE.  Clear it only for unicast
+-	 * QoS data; firmware will aggregate these packets after its BA agreement
+-	 * is live.  Management, multicast and non-QoS traffic remains no-BA.
++	 * so the shared TXWI writer sets BA_DISABLE.  For unicast QoS data
++	 * (except USE_MINRATE control handshakes like EAPOL), let N9 firmware
++	 * rate control and hardware A-MPDU aggregation own the frame so TX
++	 * scales to full VHT80 2SS rates instead of single-MPDU fixed rates.
+ 	 */
+-	if (firmware_ba)
+-		txwi[2] &= cpu_to_le32(~MT_TXD2_BA_DISABLE);
+-	if (!(rate.flags & (IEEE80211_TX_RC_MCS | IEEE80211_TX_RC_VHT_MCS)))
+-		txwi[2] |= cpu_to_le32(MT_TXD2_BA_DISABLE);
++	if (firmware_ba && !(info->flags & IEEE80211_TX_CTL_USE_MINRATE)) {
++		txwi[2] &= cpu_to_le32(~(MT_TXD2_FIX_RATE | MT_TXD2_BA_DISABLE));
++		txwi[3] &= cpu_to_le32(~MT_TXD3_REM_TX_COUNT);
++		txwi[3] |= cpu_to_le32(FIELD_PREP(MT_TXD3_REM_TX_COUNT,
++						   clamp_t(u8, rate.count, 1, 8)));
++		txwi[6] = 0;
++		return;
++	}
++
++	txwi[2] |= cpu_to_le32(MT_TXD2_FIX_RATE | MT_TXD2_BA_DISABLE);
+ 	txwi[3] &= cpu_to_le32(~MT_TXD3_REM_TX_COUNT);
+ 	txwi[3] |= cpu_to_le32(FIELD_PREP(MT_TXD3_REM_TX_COUNT,
+ 					   clamp_t(u8, rate.count, 1, 8)));
+@@ -2177,18 +2392,29 @@ int mt7663s_w103d_tx_prepare_skb(struct mt76_dev *mdev, void *txwi_ptr,
+ 
+ 	ret = mt7663_usb_sdio_tx_prepare_skb(mdev, txwi_ptr, qid, wcid, sta,
+ 					     tx_info);
+-	if (ret || !sta || !dev->mphy.chandef.chan ||
+-	    dev->mphy.chandef.chan->band != NL80211_BAND_5GHZ)
++	if (ret || !sta || !dev->mphy.chandef.chan)
+ 		return ret;
+ 
+-	/* The shared SDIO rate worker writes the WTBL rate table through blocked
+-	 * 0x82xxxx registers, then marks that table valid.  Carry minstrel's
+-	 * selected rate in each TX descriptor instead, bypassing that inaccessible
+-	 * table while retaining VHT bandwidth, NSS and rate adaptation.  Force
+-	 * management/control frames to mandatory 6 Mbps OFDM as well: leaving
+-	 * their descriptor unfixed still selects the same inaccessible WTBL table.
+-	 */
+-	mt7663s_w103d_fix_5g_tx_rate(dev, sta, tx_info, is_data, firmware_ba);
++	if (dev->mphy.chandef.chan->band == NL80211_BAND_5GHZ) {
++		/* The shared SDIO rate worker writes the WTBL rate table
++		 * through blocked 0x82xxxx registers, then marks that table
++		 * valid.  Keep management/control/EAPOL frames at mandatory
++		 * 6 Mbps OFDM and clear FIX_RATE + BA_DISABLE for unicast QoS
++		 * data so firmware RA and hardware TX A-MPDU handle 80 MHz 2SS.
++		 */
++		mt7663s_w103d_fix_5g_tx_rate(dev, sta, tx_info, is_data,
++					     firmware_ba);
++	} else if (firmware_ba &&
++		   !(IEEE80211_SKB_CB(tx_info->skb)->flags &
++		     IEEE80211_TX_CTL_USE_MINRATE)) {
++		__le32 *txwi = (__le32 *)tx_info->skb->data;
++
++		/* Enable firmware RA and hardware TX A-MPDU on 2.4 GHz unicast
++		 * QoS data while leaving management/broadcast/EAPOL untouched.
++		 */
++		txwi[2] &= cpu_to_le32(~(MT_TXD2_FIX_RATE | MT_TXD2_BA_DISABLE));
++		txwi[6] = 0;
++	}
+ 
+ 	return 0;
+ }
+@@ -2668,5 +2894,20 @@ void mt7663s_w103d_queue_rx_skb(struct mt76_dev *mdev, enum mt76_rxq_id qid,
+ 	    mt7663s_w103d_handle_rx_ba_event(mdev, skb))
+ 		return;
+ 
++	if (mt7663s_w103d_active() && skb->len >= sizeof(struct mt7615_mcu_rxd)) {
++		struct mt7615_mcu_rxd *rxd = (struct mt7615_mcu_rxd *)skb->data;
++
++		/* V3 firmware emits BSS_ABSENCE(is_absent=1) when off-channel
++		 * during scan without a matching resume event; queues are woken
++		 * cleanly on MCU_EVENT_SCAN_DONE above.
++		 */
++		if (le32_get_bits(rxd->rxd[0], MT_RXD0_PKT_TYPE) ==
++		    PKT_TYPE_RX_EVENT &&
++		    rxd->eid == MCU_EVENT_BSS_ABSENCE) {
++			dev_kfree_skb(skb);
++			return;
++		}
++	}
++
+ 	mt7615_queue_rx_skb(mdev, qid, skb, info);
+ }
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.h b/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.h
+index 09e179a..b2a994d 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.h
++++ b/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.h
+@@ -75,10 +75,11 @@ bool mt7663s_w103d_should_wait_resp(int cmd);
+ void mt7663s_w103d_install_legacy_ops(struct mt7615_mcu_ops *ops);
+ 
+ #define W103D_TX_PAGE_PER_FRAME		16
+-#define W103D_QUOTA_WATCHDOG_MS		4
+-#define W103D_TX_QUOTA_RETRY_MAX	3
++#define W103D_QUOTA_WATCHDOG_MS		1
++#define W103D_TX_QUOTA_RETRY_MAX	4
+ #define W103D_SAFE_MTU			1500
+ 
++int mt7663s_w103d_read_tx_quota(struct mt76_dev *mdev);
+ int mt7663s_w103d_poll_tx_quota(struct mt76_dev *mdev);
+ void mt7663s_w103d_arm_quota_watchdog(struct mt76_dev *mdev);
+ void mt7663s_w103d_cancel_quota_watchdog(struct mt76_dev *mdev);
