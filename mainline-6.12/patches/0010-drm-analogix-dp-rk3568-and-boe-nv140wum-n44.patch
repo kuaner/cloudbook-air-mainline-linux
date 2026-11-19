@@ -1,32 +1,101 @@
-From: CloudBook Air Linux Port <port@cloudbookair.local>
-Subject: [PATCH] drm: rockchip: add RK3568 Analogix eDP and BOE NV140WUM-N44 support
-
-Add RK3568 eDP binding/power-on training return propagation in
-analogix_dp and register BOE 0x0a6a (NV140WUM-N44) in panel-edp.
----
-diff --git a/include/drm/bridge/analogix_dp.h b/include/drm/bridge/analogix_dp.h
---- a/include/drm/bridge/analogix_dp.h
-+++ b/include/drm/bridge/analogix_dp.h
-@@ -16,12 +16,14 @@
- 	EXYNOS_DP,
- 	RK3288_DP,
- 	RK3399_EDP,
-+	RK3568_EDP,
- 	RK3588_EDP,
- };
+diff --git a/drivers/gpu/drm/bridge/analogix/analogix_dp_core.c b/drivers/gpu/drm/bridge/analogix/analogix_dp_core.c
+index bc8de97a9..c3ddac4c9 100644
+--- a/drivers/gpu/drm/bridge/analogix/analogix_dp_core.c
++++ b/drivers/gpu/drm/bridge/analogix/analogix_dp_core.c
+@@ -237,7 +237,9 @@ static int analogix_dp_link_start(struct analogix_dp_device *dp)
+ 		dp->link_train.cr_loop[lane] = 0;
  
- static inline bool is_rockchip(enum analogix_dp_devtype type)
- {
--	return type == RK3288_DP || type == RK3399_EDP || type == RK3588_EDP;
-+	return type == RK3288_DP || type == RK3399_EDP ||
-+		type == RK3568_EDP || type == RK3588_EDP;
- }
+ 	/* Set link rate and count as you want to establish*/
+-	analogix_dp_set_link_bandwidth(dp, dp->link_train.link_rate);
++	retval = analogix_dp_set_link_bandwidth(dp, dp->link_train.link_rate);
++	if (retval)
++		return retval;
+ 	retval = analogix_dp_wait_pll_locked(dp);
+ 	if (retval) {
+ 		DRM_DEV_ERROR(dp->dev, "Wait for pll lock failed %d\n", retval);
+@@ -248,7 +250,9 @@ static int analogix_dp_link_start(struct analogix_dp_device *dp)
+ 	 * the DP inter pair skew issue for at least 10 us
+ 	 */
+ 	analogix_dp_reset_macro(dp);
+-	analogix_dp_set_lane_count(dp, dp->link_train.lane_count);
++	retval = analogix_dp_set_lane_count(dp, dp->link_train.lane_count);
++	if (retval)
++		return retval;
  
- struct analogix_dp_plat_data {
+ 	/* Setup RX configuration */
+ 	buf[0] = dp->link_train.link_rate;
+@@ -268,7 +272,9 @@ static int analogix_dp_link_start(struct analogix_dp_device *dp)
+ 		dp->link_train.training_lane[lane] =
+ 					DP_TRAIN_VOLTAGE_SWING_LEVEL_0 |
+ 					DP_TRAIN_PRE_EMPH_LEVEL_0;
+-	analogix_dp_set_lane_link_training(dp);
++	retval = analogix_dp_set_lane_link_training(dp);
++	if (retval)
++		return retval;
+ 
+ 	/* Set training pattern 1 */
+ 	analogix_dp_set_training_pattern(dp, TRAINING_PTN1);
+@@ -439,7 +445,9 @@ static int analogix_dp_process_clock_recovery(struct analogix_dp_device *dp)
+ 	}
+ 
+ 	analogix_dp_get_adjust_training_lane(dp, adjust_request);
+-	analogix_dp_set_lane_link_training(dp);
++	retval = analogix_dp_set_lane_link_training(dp);
++	if (retval)
++		return retval;
+ 
+ 	retval = drm_dp_dpcd_write(&dp->aux, DP_TRAINING_LANE0_SET,
+ 				   dp->link_train.training_lane, lane_count);
+@@ -511,7 +519,9 @@ static int analogix_dp_process_equalizer_training(struct analogix_dp_device *dp)
+ 		return -EIO;
+ 	}
+ 
+-	analogix_dp_set_lane_link_training(dp);
++	retval = analogix_dp_set_lane_link_training(dp);
++	if (retval)
++		return retval;
+ 
+ 	retval = drm_dp_dpcd_write(&dp->aux, DP_TRAINING_LANE0_SET,
+ 				   dp->link_train.training_lane, lane_count);
+@@ -620,7 +630,9 @@ static int analogix_dp_fast_link_train(struct analogix_dp_device *dp)
+ 	int ret;
+ 	u8 link_align, link_status[2];
+ 
+-	analogix_dp_set_link_bandwidth(dp, dp->link_train.link_rate);
++	ret = analogix_dp_set_link_bandwidth(dp, dp->link_train.link_rate);
++	if (ret)
++		return ret;
+ 	ret = analogix_dp_wait_pll_locked(dp);
+ 	if (ret) {
+ 		DRM_DEV_ERROR(dp->dev, "Wait for pll lock failed %d\n", ret);
+@@ -632,8 +644,12 @@ static int analogix_dp_fast_link_train(struct analogix_dp_device *dp)
+ 	 * the DP inter pair skew issue for at least 10 us
+ 	 */
+ 	analogix_dp_reset_macro(dp);
+-	analogix_dp_set_lane_count(dp, dp->link_train.lane_count);
+-	analogix_dp_set_lane_link_training(dp);
++	ret = analogix_dp_set_lane_count(dp, dp->link_train.lane_count);
++	if (ret)
++		return ret;
++	ret = analogix_dp_set_lane_link_training(dp);
++	if (ret)
++		return ret;
+ 
+ 	/* source Set training pattern 1 */
+ 	analogix_dp_set_training_pattern(dp, TRAINING_PTN1);
+@@ -1507,6 +1523,7 @@ static int analogix_dp_dt_parse_pdata(struct analogix_dp_device *dp)
+ 	switch (dp->plat_data->dev_type) {
+ 	case RK3288_DP:
+ 	case RK3399_EDP:
++	case RK3568_EDP:
+ 		/*
+ 		 * Like Rk3288 DisplayPort TRM indicate that "Main link
+ 		 * containing 4 physical lanes of 2.7/1.62 Gbps/lane".
 diff --git a/drivers/gpu/drm/bridge/analogix/analogix_dp_core.h b/drivers/gpu/drm/bridge/analogix/analogix_dp_core.h
+index 774d11574..6585cbd32 100644
 --- a/drivers/gpu/drm/bridge/analogix/analogix_dp_core.h
 +++ b/drivers/gpu/drm/bridge/analogix/analogix_dp_core.h
-@@ -200,15 +200,15 @@
+@@ -200,15 +200,15 @@ void analogix_dp_reset_aux(struct analogix_dp_device *dp);
  void analogix_dp_init_aux(struct analogix_dp_device *dp);
  int analogix_dp_get_plug_in_status(struct analogix_dp_device *dp);
  void analogix_dp_enable_sw_function(struct analogix_dp_device *dp);
@@ -45,99 +114,8 @@ diff --git a/drivers/gpu/drm/bridge/analogix/analogix_dp_core.h b/drivers/gpu/dr
  u32 analogix_dp_get_lane_link_training(struct analogix_dp_device *dp, u8 lane);
  void analogix_dp_reset_macro(struct analogix_dp_device *dp);
  void analogix_dp_init_video(struct analogix_dp_device *dp);
-diff --git a/drivers/gpu/drm/bridge/analogix/analogix_dp_core.c b/drivers/gpu/drm/bridge/analogix/analogix_dp_core.c
---- a/drivers/gpu/drm/bridge/analogix/analogix_dp_core.c
-+++ b/drivers/gpu/drm/bridge/analogix/analogix_dp_core.c
-@@ -237,7 +237,9 @@
- 		dp->link_train.cr_loop[lane] = 0;
- 
- 	/* Set link rate and count as you want to establish*/
--	analogix_dp_set_link_bandwidth(dp, dp->link_train.link_rate);
-+	retval = analogix_dp_set_link_bandwidth(dp, dp->link_train.link_rate);
-+	if (retval)
-+		return retval;
- 	retval = analogix_dp_wait_pll_locked(dp);
- 	if (retval) {
- 		DRM_DEV_ERROR(dp->dev, "Wait for pll lock failed %d\n", retval);
-@@ -248,7 +250,9 @@
- 	 * the DP inter pair skew issue for at least 10 us
- 	 */
- 	analogix_dp_reset_macro(dp);
--	analogix_dp_set_lane_count(dp, dp->link_train.lane_count);
-+	retval = analogix_dp_set_lane_count(dp, dp->link_train.lane_count);
-+	if (retval)
-+		return retval;
- 
- 	/* Setup RX configuration */
- 	buf[0] = dp->link_train.link_rate;
-@@ -268,7 +272,9 @@
- 		dp->link_train.training_lane[lane] =
- 					DP_TRAIN_VOLTAGE_SWING_LEVEL_0 |
- 					DP_TRAIN_PRE_EMPH_LEVEL_0;
--	analogix_dp_set_lane_link_training(dp);
-+	retval = analogix_dp_set_lane_link_training(dp);
-+	if (retval)
-+		return retval;
- 
- 	/* Set training pattern 1 */
- 	analogix_dp_set_training_pattern(dp, TRAINING_PTN1);
-@@ -439,7 +445,9 @@
- 	}
- 
- 	analogix_dp_get_adjust_training_lane(dp, adjust_request);
--	analogix_dp_set_lane_link_training(dp);
-+	retval = analogix_dp_set_lane_link_training(dp);
-+	if (retval)
-+		return retval;
- 
- 	retval = drm_dp_dpcd_write(&dp->aux, DP_TRAINING_LANE0_SET,
- 				   dp->link_train.training_lane, lane_count);
-@@ -511,7 +519,9 @@
- 		return -EIO;
- 	}
- 
--	analogix_dp_set_lane_link_training(dp);
-+	retval = analogix_dp_set_lane_link_training(dp);
-+	if (retval)
-+		return retval;
- 
- 	retval = drm_dp_dpcd_write(&dp->aux, DP_TRAINING_LANE0_SET,
- 				   dp->link_train.training_lane, lane_count);
-@@ -620,7 +630,9 @@
- 	int ret;
- 	u8 link_align, link_status[2];
- 
--	analogix_dp_set_link_bandwidth(dp, dp->link_train.link_rate);
-+	ret = analogix_dp_set_link_bandwidth(dp, dp->link_train.link_rate);
-+	if (ret)
-+		return ret;
- 	ret = analogix_dp_wait_pll_locked(dp);
- 	if (ret) {
- 		DRM_DEV_ERROR(dp->dev, "Wait for pll lock failed %d\n", ret);
-@@ -632,8 +644,12 @@
- 	 * the DP inter pair skew issue for at least 10 us
- 	 */
- 	analogix_dp_reset_macro(dp);
--	analogix_dp_set_lane_count(dp, dp->link_train.lane_count);
--	analogix_dp_set_lane_link_training(dp);
-+	ret = analogix_dp_set_lane_count(dp, dp->link_train.lane_count);
-+	if (ret)
-+		return ret;
-+	ret = analogix_dp_set_lane_link_training(dp);
-+	if (ret)
-+		return ret;
- 
- 	/* source Set training pattern 1 */
- 	analogix_dp_set_training_pattern(dp, TRAINING_PTN1);
-@@ -1507,6 +1523,7 @@
- 	switch (dp->plat_data->dev_type) {
- 	case RK3288_DP:
- 	case RK3399_EDP:
-+	case RK3568_EDP:
- 		/*
- 		 * Like Rk3288 DisplayPort TRM indicate that "Main link
- 		 * containing 4 physical lanes of 2.7/1.62 Gbps/lane".
 diff --git a/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c b/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c
+index 3afc73c85..554a716ed 100644
 --- a/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c
 +++ b/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c
 @@ -11,6 +11,7 @@
@@ -148,16 +126,14 @@ diff --git a/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c b/drivers/gpu/drm
  
  #include <drm/bridge/analogix_dp.h>
  
-@@ -510,13 +511,31 @@
+@@ -510,13 +511,31 @@ void analogix_dp_enable_sw_function(struct analogix_dp_device *dp)
  	writel(reg, dp->reg_base + ANALOGIX_DP_FUNC_EN_1);
  }
  
 -void analogix_dp_set_link_bandwidth(struct analogix_dp_device *dp, u32 bwtype)
--{
--	u32 reg;
 +int analogix_dp_set_link_bandwidth(struct analogix_dp_device *dp, u32 bwtype)
-+{
-+	u32 reg;
+ {
+ 	u32 reg;
 +	int ret;
  
  	reg = bwtype;
@@ -183,16 +159,14 @@ diff --git a/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c b/drivers/gpu/drm
  }
  
  void analogix_dp_get_link_bandwidth(struct analogix_dp_device *dp, u32 *bwtype)
-@@ -527,12 +546,28 @@
+@@ -527,12 +546,28 @@ void analogix_dp_get_link_bandwidth(struct analogix_dp_device *dp, u32 *bwtype)
  	*bwtype = reg;
  }
  
 -void analogix_dp_set_lane_count(struct analogix_dp_device *dp, u32 count)
--{
--	u32 reg;
 +int analogix_dp_set_lane_count(struct analogix_dp_device *dp, u32 count)
-+{
-+	u32 reg;
+ {
+ 	u32 reg;
 +	int ret;
  
  	reg = count;
@@ -215,7 +189,7 @@ diff --git a/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c b/drivers/gpu/drm
  }
  
  void analogix_dp_get_lane_count(struct analogix_dp_device *dp, u32 *count)
-@@ -543,13 +578,41 @@
+@@ -543,13 +578,41 @@ void analogix_dp_get_lane_count(struct analogix_dp_device *dp, u32 *count)
  	*count = reg;
  }
  
@@ -258,50 +232,25 @@ diff --git a/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c b/drivers/gpu/drm
  }
  
  u32 analogix_dp_get_lane_link_training(struct analogix_dp_device *dp, u8 lane)
-diff --git a/drivers/gpu/drm/rockchip/analogix_dp-rockchip.c b/drivers/gpu/drm/rockchip/analogix_dp-rockchip.c
---- a/drivers/gpu/drm/rockchip/analogix_dp-rockchip.c
-+++ b/drivers/gpu/drm/rockchip/analogix_dp-rockchip.c
-@@ -565,6 +565,14 @@
- 	{ /* sentinel */ }
- };
- 
-+static const struct rockchip_dp_chip_data rk3568_edp[] = {
-+	{
-+		.chip_type = RK3568_EDP,
-+		.reg = 0xfe0c0000,
-+	},
-+	{ /* sentinel */ }
-+};
-+
- static const struct rockchip_dp_chip_data rk3588_edp[] = {
- 	{
- 		.edp_mode = GRF_REG_FIELD(0x0000, 0, 0),
-@@ -582,6 +590,7 @@
- static const struct of_device_id rockchip_dp_dt_ids[] = {
- 	{.compatible = "rockchip,rk3288-dp", .data = &rk3288_dp },
- 	{.compatible = "rockchip,rk3399-edp", .data = &rk3399_edp },
-+	{.compatible = "rockchip,rk3568-edp", .data = &rk3568_edp },
- 	{.compatible = "rockchip,rk3588-edp", .data = &rk3588_edp },
- 	{}
- };
 diff --git a/drivers/gpu/drm/panel/panel-edp.c b/drivers/gpu/drm/panel/panel-edp.c
+index 6f5d83dc0..af1794f52 100644
 --- a/drivers/gpu/drm/panel/panel-edp.c
 +++ b/drivers/gpu/drm/panel/panel-edp.c
-@@ -1762,6 +1762,13 @@
- 	.unprepare = 500,
- 	.enable = 80,
+@@ -1764,6 +1764,13 @@ static const struct panel_delay delay_200_500_e80_d50 = {
  	.disable = 50,
-+};
-+
+ };
+ 
 +static const struct panel_delay delay_200_500_e80_d60 = {
 +	.hpd_absent = 200,
 +	.unprepare = 500,
 +	.enable = 80,
 +	.disable = 60,
- };
- 
++};
++
  static const struct panel_delay delay_80_500_e50 = {
-@@ -1915,6 +1922,7 @@
+ 	.hpd_absent = 80,
+ 	.unprepare = 500,
+@@ -1915,6 +1922,7 @@ static const struct edp_panel_entry edp_panels[] = {
  	EDP_PANEL_ENTRY('B', 'O', 'E', 0x0a36, &delay_200_500_e200, "Unknown"),
  	EDP_PANEL_ENTRY('B', 'O', 'E', 0x0a3e, &delay_200_500_e80, "NV116WHM-N49"),
  	EDP_PANEL_ENTRY('B', 'O', 'E', 0x0a5d, &delay_200_500_e50, "NV116WHM-N45"),
@@ -309,3 +258,52 @@ diff --git a/drivers/gpu/drm/panel/panel-edp.c b/drivers/gpu/drm/panel/panel-edp
  	EDP_PANEL_ENTRY('B', 'O', 'E', 0x0ac5, &delay_200_500_e50, "NV116WHM-N4C"),
  	EDP_PANEL_ENTRY('B', 'O', 'E', 0x0ae8, &delay_200_500_e50_p2e80, "NV140WUM-N41"),
  	EDP_PANEL_ENTRY('B', 'O', 'E', 0x0b34, &delay_200_500_e80, "NV122WUM-N41"),
+diff --git a/drivers/gpu/drm/rockchip/analogix_dp-rockchip.c b/drivers/gpu/drm/rockchip/analogix_dp-rockchip.c
+index d3341edfe..f86cc10d4 100644
+--- a/drivers/gpu/drm/rockchip/analogix_dp-rockchip.c
++++ b/drivers/gpu/drm/rockchip/analogix_dp-rockchip.c
+@@ -192,6 +192,10 @@ static void rockchip_dp_drm_encoder_enable(struct drm_encoder *encoder,
+ 	if (old_crtc_state && old_crtc_state->self_refresh_active)
+ 		return;
+ 
++	/* RK3568 selects the VOP through the DTS topology, not the GRF. */
++	if (!dp->data->lcdsel_grf_reg)
++		return;
++
+ 	ret = drm_of_encoder_active_endpoint_id(dp->dev->of_node, encoder);
+ 	if (ret < 0)
+ 		return;
+@@ -461,9 +465,14 @@ static const struct rockchip_dp_chip_data rk3288_dp = {
+ 	.chip_type = RK3288_DP,
+ };
+ 
++static const struct rockchip_dp_chip_data rk3568_edp = {
++	.chip_type = RK3568_EDP,
++};
++
+ static const struct of_device_id rockchip_dp_dt_ids[] = {
+ 	{.compatible = "rockchip,rk3288-dp", .data = &rk3288_dp },
+ 	{.compatible = "rockchip,rk3399-edp", .data = &rk3399_edp },
++	{.compatible = "rockchip,rk3568-edp", .data = &rk3568_edp },
+ 	{}
+ };
+ MODULE_DEVICE_TABLE(of, rockchip_dp_dt_ids);
+diff --git a/include/drm/bridge/analogix_dp.h b/include/drm/bridge/analogix_dp.h
+index 6002c5666..c8a44c084 100644
+--- a/include/drm/bridge/analogix_dp.h
++++ b/include/drm/bridge/analogix_dp.h
+@@ -15,11 +15,13 @@ enum analogix_dp_devtype {
+ 	EXYNOS_DP,
+ 	RK3288_DP,
+ 	RK3399_EDP,
++	RK3568_EDP,
+ };
+ 
+ static inline bool is_rockchip(enum analogix_dp_devtype type)
+ {
+-	return type == RK3288_DP || type == RK3399_EDP;
++	return type == RK3288_DP || type == RK3399_EDP ||
++		type == RK3568_EDP;
+ }
+ 
+ struct analogix_dp_plat_data {

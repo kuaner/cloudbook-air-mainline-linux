@@ -1,14 +1,5 @@
-From: W103D Project <local@w103d>
-Subject: [PATCH] mt76: add isolated W103D MT7663S SDIO driver
-
-Build the W103D-specific MT7663S transport as a separate mt76 module,
-keeping the upstream mt7615 sources unchanged except for removing their
-duplicate mt7663s module registration.
-
----
-
 diff --git a/drivers/net/wireless/mediatek/mt76/Makefile b/drivers/net/wireless/mediatek/mt76/Makefile
-index f7f2d9a8a..16a435191 100644
+index f7f2d9a..16a4351 100644
 --- a/drivers/net/wireless/mediatek/mt76/Makefile
 +++ b/drivers/net/wireless/mediatek/mt76/Makefile
 @@ -45,3 +45,4 @@ obj-$(CONFIG_MT7915E) += mt7915/
@@ -17,7 +8,7 @@ index f7f2d9a8a..16a435191 100644
  obj-$(CONFIG_MT7925_COMMON) += mt7925/
 +obj-$(CONFIG_MT7663S) += mt7663s/
 diff --git a/drivers/net/wireless/mediatek/mt76/mt7615/Makefile b/drivers/net/wireless/mediatek/mt76/mt7615/Makefile
-index 2b97b9dde..57f02f3be 100644
+index 2b97b9d..57f02f3 100644
 --- a/drivers/net/wireless/mediatek/mt76/mt7615/Makefile
 +++ b/drivers/net/wireless/mediatek/mt76/mt7615/Makefile
 @@ -4,7 +4,6 @@ obj-$(CONFIG_MT7615_COMMON) += mt7615-common.o
@@ -35,7 +26,7 @@ index 2b97b9dde..57f02f3be 100644
 -mt7663s-y := sdio.o sdio_mcu.o
 diff --git a/drivers/net/wireless/mediatek/mt76/mt7663s/Makefile b/drivers/net/wireless/mediatek/mt76/mt7663s/Makefile
 new file mode 100644
-index 000000000..000000000
+index 0000000..3e799dd
 --- /dev/null
 +++ b/drivers/net/wireless/mediatek/mt76/mt7663s/Makefile
 @@ -0,0 +1,5 @@
@@ -46,7 +37,7 @@ index 000000000..000000000
 +mt7663s-y := sdio.o sdio_mcu.o mt7663s_w103d.o mt7663s_txrx.o
 diff --git a/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_txrx.c b/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_txrx.c
 new file mode 100644
-index 000000000..000000000
+index 0000000..2ef3db3
 --- /dev/null
 +++ b/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_txrx.c
 @@ -0,0 +1,478 @@
@@ -530,7 +521,7 @@ index 000000000..000000000
 +}
 diff --git a/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c b/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c
 new file mode 100644
-index 000000000..000000000
+index 0000000..85c2c22
 --- /dev/null
 +++ b/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c
 @@ -0,0 +1,2468 @@
@@ -3004,7 +2995,7 @@ index 000000000..000000000
 +}
 diff --git a/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.h b/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.h
 new file mode 100644
-index 000000000..000000000
+index 0000000..18597af
 --- /dev/null
 +++ b/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.h
 @@ -0,0 +1,87 @@
@@ -3097,7 +3088,7 @@ index 000000000..000000000
 +#endif
 diff --git a/drivers/net/wireless/mediatek/mt76/mt7663s/sdio.c b/drivers/net/wireless/mediatek/mt76/mt7663s/sdio.c
 new file mode 100644
-index 000000000..000000000
+index 0000000..8dbc9b5
 --- /dev/null
 +++ b/drivers/net/wireless/mediatek/mt76/mt7663s/sdio.c
 @@ -0,0 +1,491 @@
@@ -3594,7 +3585,7 @@ index 000000000..000000000
 +MODULE_LICENSE("Dual BSD/GPL");
 diff --git a/drivers/net/wireless/mediatek/mt76/mt7663s/sdio_mcu.c b/drivers/net/wireless/mediatek/mt76/mt7663s/sdio_mcu.c
 new file mode 100644
-index 000000000..000000000
+index 0000000..1ae890a
 --- /dev/null
 +++ b/drivers/net/wireless/mediatek/mt76/mt7663s/sdio_mcu.c
 @@ -0,0 +1,205 @@

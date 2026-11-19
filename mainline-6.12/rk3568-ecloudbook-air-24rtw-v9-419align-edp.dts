@@ -17,16 +17,12 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/pinctrl/rockchip.h>
 
-&{/reserved-memory} {
-	/delete-node/ shmem@10f000;
-};
-
-&{/} {
-	scmi_shmem: scmi-shmem@10f000 {
-		compatible = "arm,scmi-shmem";
-		reg = <0x0 0x0010f000 0x0 0x100>;
-	};
-};
+/*
+ * Linux 6.12 rk356x.dtsi already exposes the SCMI shared memory as
+ * sram@10f000/sram@0 (label scmi_shmem) outside of reserved-memory, so the
+ * older workaround that deleted shmem@10f000 and re-created it at the root
+ * node only duplicated the label and broke the DTB build.
+ */
 
 &chosen {
 	stdout-path = "serial2:115200n8";

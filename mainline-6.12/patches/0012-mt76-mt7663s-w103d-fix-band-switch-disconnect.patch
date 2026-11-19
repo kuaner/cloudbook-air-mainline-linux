@@ -1,24 +1,3 @@
-From: CloudBook Air Linux Port <port@cloudbookair.local>
-Subject: [PATCH] mt76: mt7663s: fix 2.4 GHz to 5 GHz band-switch auth timeout on W103D
-
-Fix two issues that caused MT7663S (W103D / N9 firmware 7663mp1827) to
-time out during 5 GHz authentication (and stall subsequent firmware
-scans) after previously associating on 2.4 GHz:
-
-1. In mt7615_mac_set_beacon_filter(), honor the @enable parameter for
-   STA interfaces (matching mt7921). Previously, disconnecting a STA
-   passed !phy->n_beacon_vif (true) to mt7615_mcu_set_bss_pm(),
-   re-sending CMD 0x16 (SET_BSS_CONNECTED) on disconnect and leaving
-   beacon filtering enabled.
-
-2. In mt7663s_w103d.c, track and release CH_PRIVILEGE (CMD 0x1c)
-   immediately when acquired in set_channel() so failed 5 GHz auth does
-   not leak a channel grant, and mirror the vendor gen4m disconnect
-   sequence on STA disassociation: send CMD 0x12 (UPDATE_BSS_INFO,
-   DISCONNECTED / sta_rec_idx_ap=0xfe / cleared RLM) followed by
-   CMD 0x11 (BSS_ACTIVATE_CTRL, active=0), re-activating the BSS
-   before subsequent scans or 5 GHz channel switches.
----
 diff --git a/drivers/net/wireless/mediatek/mt76/mt7615/mac.c b/drivers/net/wireless/mediatek/mt76/mt7615/mac.c
 index 4f416eb..834708f 100644
 --- a/drivers/net/wireless/mediatek/mt76/mt7615/mac.c

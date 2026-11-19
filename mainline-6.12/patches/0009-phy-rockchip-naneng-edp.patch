@@ -1,13 +1,8 @@
-From: CloudBook Air Linux Port <port@cloudbookair.local>
-Subject: [PATCH] phy: rockchip: add RK3568 Naneng eDP PHY driver
-
-Port Rockchip Naneng eDP PHY driver (GPL-2.0, Copyright Rockchip
-Electronics Co. Ltd.) with zte,edp-v12-v13 BOE N44 link override.
----
 diff --git a/drivers/phy/rockchip/Kconfig b/drivers/phy/rockchip/Kconfig
+index dcb8e1628..ead4dd07f 100644
 --- a/drivers/phy/rockchip/Kconfig
 +++ b/drivers/phy/rockchip/Kconfig
-@@ -74,6 +74,13 @@
+@@ -74,6 +74,13 @@ config PHY_ROCKCHIP_NANENG_COMBO_PHY
  	  Enable this to support the Rockchip PCIe/USB3.0/SATA/QSGMII
  	  combo PHY with NaNeng IP block.
  
@@ -22,18 +17,20 @@ diff --git a/drivers/phy/rockchip/Kconfig b/drivers/phy/rockchip/Kconfig
  	tristate "Rockchip PCIe PHY Driver"
  	depends on (ARCH_ROCKCHIP && OF) || COMPILE_TEST
 diff --git a/drivers/phy/rockchip/Makefile b/drivers/phy/rockchip/Makefile
+index 010a824e3..1ec56641e 100644
 --- a/drivers/phy/rockchip/Makefile
 +++ b/drivers/phy/rockchip/Makefile
-@@ -7,6 +7,7 @@
+@@ -7,6 +7,7 @@ obj-$(CONFIG_PHY_ROCKCHIP_INNO_DSIDPHY)	+= phy-rockchip-inno-dsidphy.o
  obj-$(CONFIG_PHY_ROCKCHIP_INNO_HDMI)	+= phy-rockchip-inno-hdmi.o
  obj-$(CONFIG_PHY_ROCKCHIP_INNO_USB2)	+= phy-rockchip-inno-usb2.o
  obj-$(CONFIG_PHY_ROCKCHIP_NANENG_COMBO_PHY)	+= phy-rockchip-naneng-combphy.o
 +obj-$(CONFIG_PHY_ROCKCHIP_NANENG_EDP)	+= phy-rockchip-naneng-edp.o
  obj-$(CONFIG_PHY_ROCKCHIP_PCIE)		+= phy-rockchip-pcie.o
- obj-$(CONFIG_PHY_ROCKCHIP_SAMSUNG_DCPHY)	+= phy-rockchip-samsung-dcphy.o
  obj-$(CONFIG_PHY_ROCKCHIP_SAMSUNG_HDPTX)	+= phy-rockchip-samsung-hdptx.o
+ obj-$(CONFIG_PHY_ROCKCHIP_SNPS_PCIE3)	+= phy-rockchip-snps-pcie3.o
 diff --git a/drivers/phy/rockchip/phy-rockchip-naneng-edp.c b/drivers/phy/rockchip/phy-rockchip-naneng-edp.c
 new file mode 100644
+index 000000000..6c69e0a1b
 --- /dev/null
 +++ b/drivers/phy/rockchip/phy-rockchip-naneng-edp.c
 @@ -0,0 +1,408 @@

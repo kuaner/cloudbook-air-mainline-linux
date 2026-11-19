@@ -1,16 +1,48 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: CloudBook Air Linux Port <port@cloudbookair.local>
-Date: Sun, 15 Nov 2026 10:52:00 +0800
-Subject: [PATCH] power: supply: add Southchip SC2021 and TI BQ25700/BQ25703A drivers
-
-Add USB Type-C PD controller (Southchip SC2021) and buck-boost battery
-charger (TI BQ25700/BQ25703A) drivers for CloudBook Air (RK3568B2),
-including PD VBUS tiering (up to 3250 mA @ 20V), ICO enablement,
-watchdog disable, continuous ADC telemetry, and SBS battery coordination.
----
-diff -ruN a/drivers/power/supply/bq25700_charger.c b/drivers/power/supply/bq25700_charger.c
---- a/drivers/power/supply/bq25700_charger.c	1970-01-01 08:00:00.000000000 +0800
-+++ b/drivers/power/supply/bq25700_charger.c	2026-11-15 10:51:50.238772366 +0800
+diff --git a/drivers/power/supply/Kconfig b/drivers/power/supply/Kconfig
+index bcfa63fb9..cf8672cbd 100644
+--- a/drivers/power/supply/Kconfig
++++ b/drivers/power/supply/Kconfig
+@@ -748,6 +748,22 @@ config CHARGER_BQ256XX
+ 	  charge management and system power path management devices for single
+ 	  cell Li-ion and Li-polymer batteries.
+ 
++config CHARGER_BQ25700
++	tristate "TI BQ25700/BQ25703A buck-boost battery charger driver"
++	depends on I2C
++	select REGMAP_I2C
++	help
++	  Say Y to enable support for the TI BQ25700, BQ25703 and BQ25703A
++	  buck-boost battery chargers with USB PD input power negotiation.
++
++config CHARGER_SC2021
++	tristate "Southchip SC2021 Type-C PD port controller driver"
++	depends on I2C
++	depends on GPIOLIB || COMPILE_TEST
++	select REGMAP_I2C
++	help
++	  Say Y to enable support for the Southchip SC2021 USB Type-C / PD
++	  and DPDM port controller used with companion battery chargers.
+ config CHARGER_RK817
+ 	tristate "Rockchip RK817 PMIC Battery Charger"
+ 	depends on MFD_RK8XX
+diff --git a/drivers/power/supply/Makefile b/drivers/power/supply/Makefile
+index 8dcb41545..52dbdb6c9 100644
+--- a/drivers/power/supply/Makefile
++++ b/drivers/power/supply/Makefile
+@@ -96,6 +96,8 @@ obj-$(CONFIG_CHARGER_BQ2515X)	+= bq2515x_charger.o
+ obj-$(CONFIG_CHARGER_BQ25890)	+= bq25890_charger.o
+ obj-$(CONFIG_CHARGER_BQ25980)	+= bq25980_charger.o
+ obj-$(CONFIG_CHARGER_BQ256XX)	+= bq256xx_charger.o
++obj-$(CONFIG_CHARGER_BQ25700)	+= bq25700_charger.o
++obj-$(CONFIG_CHARGER_SC2021)	+= sc2021_charger.o
+ obj-$(CONFIG_CHARGER_RK817)	+= rk817_charger.o
+ obj-$(CONFIG_CHARGER_SMB347)	+= smb347-charger.o
+ obj-$(CONFIG_CHARGER_TPS65090)	+= tps65090-charger.o
+diff --git a/drivers/power/supply/bq25700_charger.c b/drivers/power/supply/bq25700_charger.c
+new file mode 100644
+index 000000000..c7a1e0a52
+--- /dev/null
++++ b/drivers/power/supply/bq25700_charger.c
 @@ -0,0 +1,1016 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
@@ -1028,47 +1060,11 @@ diff -ruN a/drivers/power/supply/bq25700_charger.c b/drivers/power/supply/bq2570
 +MODULE_AUTHOR("CloudBook Air Linux Port");
 +MODULE_DESCRIPTION("TI BQ25700/BQ25703/BQ25703A buck-boost charger driver");
 +MODULE_LICENSE("GPL");
-diff -ruN a/drivers/power/supply/Kconfig b/drivers/power/supply/Kconfig
---- a/drivers/power/supply/Kconfig	2026-11-15 10:52:20.950966673 +0800
-+++ b/drivers/power/supply/Kconfig	2026-11-15 10:51:21.450277996 +0800
-@@ -748,6 +748,22 @@
- 	  charge management and system power path management devices for single
- 	  cell Li-ion and Li-polymer batteries.
- 
-+config CHARGER_BQ25700
-+	tristate "TI BQ25700/BQ25703A buck-boost battery charger driver"
-+	depends on I2C
-+	select REGMAP_I2C
-+	help
-+	  Say Y to enable support for the TI BQ25700, BQ25703 and BQ25703A
-+	  buck-boost battery chargers with USB PD input power negotiation.
-+
-+config CHARGER_SC2021
-+	tristate "Southchip SC2021 Type-C PD port controller driver"
-+	depends on I2C
-+	depends on GPIOLIB || COMPILE_TEST
-+	select REGMAP_I2C
-+	help
-+	  Say Y to enable support for the Southchip SC2021 USB Type-C / PD
-+	  and DPDM port controller used with companion battery chargers.
- 
- config CHARGER_RK817
- 	tristate "Rockchip RK817 PMIC Battery Charger"
-diff -ruN a/drivers/power/supply/Makefile b/drivers/power/supply/Makefile
---- a/drivers/power/supply/Makefile	2026-11-15 10:52:20.951046828 +0800
-+++ b/drivers/power/supply/Makefile	2026-11-15 10:51:23.648292262 +0800
-@@ -96,6 +96,8 @@
- obj-$(CONFIG_CHARGER_BQ25890)	+= bq25890_charger.o
- obj-$(CONFIG_CHARGER_BQ25980)	+= bq25980_charger.o
- obj-$(CONFIG_CHARGER_BQ256XX)	+= bq256xx_charger.o
-+obj-$(CONFIG_CHARGER_BQ25700)	+= bq25700_charger.o
-+obj-$(CONFIG_CHARGER_SC2021)	+= sc2021_charger.o
- obj-$(CONFIG_CHARGER_RK817)	+= rk817_charger.o
- obj-$(CONFIG_CHARGER_SMB347)	+= smb347-charger.o
- obj-$(CONFIG_CHARGER_TPS65090)	+= tps65090-charger.o
-diff -ruN a/drivers/power/supply/sc2021_charger.c b/drivers/power/supply/sc2021_charger.c
---- a/drivers/power/supply/sc2021_charger.c	1970-01-01 08:00:00.000000000 +0800
-+++ b/drivers/power/supply/sc2021_charger.c	2026-11-15 10:49:50.159685505 +0800
+diff --git a/drivers/power/supply/sc2021_charger.c b/drivers/power/supply/sc2021_charger.c
+new file mode 100644
+index 000000000..3e1ccbe75
+--- /dev/null
++++ b/drivers/power/supply/sc2021_charger.c
 @@ -0,0 +1,433 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*

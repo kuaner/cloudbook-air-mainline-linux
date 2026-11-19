@@ -33,3 +33,22 @@
 3. 镜像小于 160 MiB 的 `boot_a` 分区；
 4. 本地 SHA-256 清单完整；
 5. UART 可用、Android B 保留，另行确认后才允许写入 `boot_a` 和重启。
+
+## 补丁基线与 6.12.117 重基
+
+`patches/` 中补丁的原始版本是在 `unifreq/linux-6.18.y` 源码树上生成的（见 `../docs/cloudbook-air-mainline/02-方案设计.md`），部分上下文引用了 6.14+/6.15+/6.16+ 才出现的代码，直接对纯净 `v6.12.117` 应用会失败。
+
+现已按 6.12.117 的真实代码重基，并已用两条独立路径验证（`git apply` 与 `patch -p1` 均 100% 成功，产物树逐字节一致）：
+
+| 补丁 | 调整内容 |
+| :--- | :--- |
+| `0005` | 去除邮件头；用真实 blob 哈希重新生成（原 `index 000000000..000000000` 会被 GNU patch 误判为删除） |
+| `0006` | 去掉 6.14+ 才有的 `hdev->reset = btmtksdio_reset;` 上下文行 |
+| `0008` | 修正 `power/supply/Kconfig` 的空行上下文 |
+| `0009` | 去掉 6.15+ 才有的 `PHY_ROCKCHIP_SAMSUNG_DCPHY` 上下文行 |
+| `0010` | 按 6.12 的扁平 `struct rockchip_dp_chip_data` 重写 RK3568 条目（丢弃 6.18 的 `.reg`/`.edp_mode`），并增加 GRF `lcdsel` 写入保护，避免向 GRF 偏移 0 写入 |
+| `0011`/`0012` | 去除邮件头 |
+
+`build_kernel_612.sh` 现优先使用 `git apply`（缺失时回退 GNU `patch`），并在首次构建时以仓库内已验证的 `config-6.12.117-cloudbook` 作为 `.config` 种子，使新克隆可复现真机验证过的配置。
+
+`rk3568-ecloudbook-air-24rtw-v9-419align-edp.dts` 中旧的 `scmi_shmem` 迁移块已移除：6.12 的 `rk356x.dtsi` 已在根节点提供 `sram@10f000/sram@0`（标签 `scmi_shmem`），旧写法会因重复标签导致 DTB 构建失败。
