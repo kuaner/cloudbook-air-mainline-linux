@@ -15,7 +15,15 @@ apply_patch_if_missing() {
     local target_file=$2
     local patch_file=$3
     if ! grep -q "$marker" "$SRC_DIR/$target_file"; then
-        patch -d "$SRC_DIR" -p1 --forward < "$ROOT_DIR/mainline-6.12/patches/$patch_file"
+        if command -v git >/dev/null 2>&1; then
+            # git apply parses git-format diffs strictly; the patches in
+            # mainline-6.12/patches are validated against a pristine 6.12.117
+            # tree, so no fuzz/offset handling is needed.
+            git -C "$SRC_DIR" apply --whitespace=nowarn \
+                "$ROOT_DIR/mainline-6.12/patches/$patch_file"
+        else
+            patch -d "$SRC_DIR" -p1 --forward < "$ROOT_DIR/mainline-6.12/patches/$patch_file"
+        fi
     fi
 }
 
@@ -24,7 +32,13 @@ for tool in clang ld.lld llvm-ar llvm-nm llvm-objcopy make dtc; do
 done
 mkdir -p "$OUT_DIR"
 if [[ ! -f "$OUT_DIR/.config" ]]; then
-    make -C "$SRC_DIR" O="$OUT_DIR" ARCH=arm64 LLVM=1 defconfig
+    # Start from the configuration validated on the device instead of a plain
+    # defconfig, so a fresh clone rebuilds the same kernel that was boot tested.
+    if [[ -f "$ROOT_DIR/mainline-6.12/config-6.12.117-cloudbook" ]]; then
+        cp "$ROOT_DIR/mainline-6.12/config-6.12.117-cloudbook" "$OUT_DIR/.config"
+    else
+        make -C "$SRC_DIR" O="$OUT_DIR" ARCH=arm64 LLVM=1 defconfig
+    fi
 fi
 
 # Sync layered v* DTS sources so #include chains (v9 -> ... -> v23) resolve inside Kbuild.
@@ -36,7 +50,7 @@ cp "$DTS_SRC" \
 # Apply required P3/P4 kernel patches (0002 is diagnostic-only; 0004 fixed-1v8 is bypassed by v23 CMD11).
 apply_patch_if_missing 'USB_DEVICE(0x0fe6, 0x9900)' "drivers/net/usb/r8152.c" "0001-r8152-add-sr9900-id.patch"
 apply_patch_if_missing '659000000' "drivers/clk/rockchip/clk-rk3568.c" "0003-clk-rk3568-add-659mhz-vpll-rate.patch"
-apply_patch_if_missing 'MT7663S_W103D_COMBO' "drivers/net/wireless/mediatek/mt76/mt7615/Kconfig" "0005-mt76-mt7663s-w103d-isolated.patch"
+apply_patch_if_missing 'obj-$(CONFIG_MT7663S) += mt7663s/' "drivers/net/wireless/mediatek/mt76/Makefile" "0005-mt76-mt7663s-w103d-isolated.patch"
 apply_patch_if_missing 'btmtksdio-w103d.h' "drivers/bluetooth/btmtksdio.c" "0006-mt7663-w103d-combo-lifecycle.patch"
 apply_patch_if_missing "Keep the station's data bitrate from being replaced" "net/mac80211/tx.c" "0007-mac80211-data-rate-reporting.patch"
 apply_patch_if_missing 'CHARGER_SC2021' "drivers/power/supply/Kconfig" "0008-power-supply-sc2021-bq25703a.patch"
