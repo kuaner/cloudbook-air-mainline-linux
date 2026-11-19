@@ -94,4 +94,41 @@ model = "Rockchip RK3568 EVB1 DDR4 V10 Board"
 
 1. **先做 Phase 0**：离线构建 7.3.5 + EVB1 + VDPU346，产出可 U 盘启动的镜像；上机只验证 HEVC，不动现有 eMMC 系统。
 2. Phase 0 成功后，再决定是否把整机迁到 7.4（等正式版）或维持 6.12 + 视频另案。
-3. VP9 暂不投入：当前上游与 VDPU346 系列都不覆盖。
+3. VP9 的处理见第 7 节：可补，但当前版本未包含。
+
+## 7. VP9 可行性（下游补丁链）
+
+结论：**VP9 可以补上**，来源是 LibreELEC 的 RK3568 补丁链，不是需要从零逆向。
+
+| 补丁 | 内容 | 大小 |
+| :--- | :--- | :--- |
+| `rockchip-0178` | VDPU381 VP9 后端：新增 `rkvdec-vdpu381-vp9.c`、`rkvdec-vp9-common.c/.h`、VP9 寄存器定义、Makefile 与 `vdpu381_coded_fmts` 条目（含 altref/segmap 修复） | ~55 KB |
+| `rockchip-0179` | VDPU346 VP9 条目：`vdpu346_vp9_ctrl_descs` + `V4L2_PIX_FMT_VP9_FRAME`，复用 `rkvdec_vdpu381_vp9_fmt_ops` | 41 行 |
+| `rockchip-0180` | VP9 Profile 2（10-bit）：`NV15` 输出与 `vdpu3xx_vp9_decoded_fmts` | ~2.8 KB |
+
+前置条件核对（均已满足）：
+
+- 7.3.5 已含 `V4L2_CID_STATELESS_VP9_FRAME` / `..._COMPRESSED_HDR`
+- `vdpu346_variant` 本来就复用 `vdpu381_variant_ops` 与 `vdpu381_rcb_sizes`，HEVC/H264 也复用 VDPU381 后端
+- 用户态 GStreamer 有 `v4l2slvp9dec`（按设备动态注册）
+
+参考实现：`dongioia/rock5bplus-rkvdec2` 里的 VDPU381 VP9 后端与 Profile 2/竖屏 stride 修复，可作交叉参考。
+
+工作量与风险：
+
+| 项 | 评估 |
+| :--- | :--- |
+| 代码量 | 导入约 40 KB + 41 行条目 |
+| 适配 | 补丁基于较老的 VDPU346 序列，与我们 2026-11 的系列上下文有差异，需 fuzz/手工 |
+| 测试 | 真机 Fluster VP9（RK3588 参考 224/305，RK3568 未知）+ GStreamer `v4l2slvp9dec` |
+| 风险 | WIP 补丁；单核 4K60 性能有限；不进上游，升级需重打 |
+| 工时 | 离线合并/编译约 1 天，真机调通 1–2 天 |
+
+建议顺序：
+
+1. 当前 HEVC + 桌面先在真机跑通；
+2. 独立分支并入 0178 + 0179（先不做 10-bit），只产 `rockchip-vdec.ko` 验证；
+3. `v4l2-ctl --list-formats-out` 确认出现 `VP9F`，再跑 Fluster / GStreamer；
+4. 稳定后再叠加 0180（Profile 2）。
+
+当前 7.3 移植**未包含** VP9，只启用 H.264 + HEVC。

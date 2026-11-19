@@ -63,7 +63,7 @@ make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
 | 项 | 6.12 主线 | 7.3.5 |
 | :--- | :--- | :--- |
 | HEVC 硬解 | ❌ | ✅ VDPU346（H.264 + HEVC，4K60） |
-| VP9 硬解 | ❌（Hantro 无 VP9 on RK3568） | ❌（VDPU346 系列不含 VP9） |
+| VP9 硬解 | ❌（Hantro 无 VP9 on RK3568） | ❌（当前未包含；可补，见 `../docs/VIDEO_DECODE_7X_RESEARCH.md` 第 7 节） |
 | eDP | 自研 PHY + analogix 补丁 | 上游已有 PHY 框架，仅补 RK3568 分支 |
 | 电源 | 自研 API 适配 | `fwnode` / `get_by_reference` 新 API |
 | DTS 基文件 | `rk356x.dtsi` | `rk356x-base.dtsi`（编译一次通过） |
