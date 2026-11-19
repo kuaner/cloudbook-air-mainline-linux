@@ -35,13 +35,35 @@ def pad_page(b: bytes, page: int = PAGE_SIZE) -> bytes:
     rem = len(b) % page
     return b + (b"\x00" * (page - rem) if rem else b"")
 
+def find_board_entry(res_data: bytearray) -> int:
+    """Locate the board-identification DTB entry by name.
+
+    The resource table order differs between factory backups and OTA
+    packages, so the entry is matched by the board name (e.g.
+    rk3568-w620d-25wh_v12#_saradc_ch1=938#_saradc_ch4=680) instead of a
+    hardcoded index. Falls back to 17 for the original factory layout.
+    """
+    for idx in range(1, 64):
+        entr_off = (1 + idx) * BLOCK_SIZE
+        if res_data[entr_off:entr_off + 4] != b"ENTR":
+            break
+        name = bytes(res_data[entr_off + 4:entr_off + 4 + 220]).split(b"\0")[0]
+        if b"w620d" in name.lower():
+            return idx
+    return 17
+
+
 def patch_resource_img(template_bytes: bytes, dtb_bytes: bytes) -> bytes:
     """Patch factory resource image with custom DTB and exact SHA-1 hashes for board detection."""
     res_data = bytearray(template_bytes)
     dtb_sha1 = hashlib.sha1(dtb_bytes).digest()
 
-    # Entries 0 (rk-kernel.dtb) and 17 (rk3568-w620d-25wh_v12#_saradc_ch1=938#_saradc_ch4=680.dtb)
-    for idx in [0, 17]:
+    # Entry 0 (rk-kernel.dtb) plus the board entry that U-Boot selects by ADC.
+    board_idx = find_board_entry(res_data)
+    board_name = bytes(res_data[(1 + board_idx) * BLOCK_SIZE + 4:
+                                (1 + board_idx) * BLOCK_SIZE + 4 + 220]).split(b"\0")[0]
+    print(f"[i] Patching resource entries 0 and {board_idx} ({board_name.decode('utf8', 'replace')})")
+    for idx in sorted({0, board_idx}):
         entr_off = (1 + idx) * BLOCK_SIZE
         assert res_data[entr_off:entr_off + 4] == b"ENTR", f"Entry {idx} is not ENTR"
         tag, blk_off, old_sz, res = struct.unpack_from("<4I", res_data, entr_off + 256)
