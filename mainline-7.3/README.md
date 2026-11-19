@@ -81,6 +81,17 @@ make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
    - `fluster -p hevc`（参考：NanoPi R5C 上 142/147）
    - GStreamer `v4l2slhevcdec`（需 1.28+ 的 v4l2codecs）
 
-## 6. 上游合并后
+## 6. DT 绑定校验
+
+`make CHECK_DTBS=y rockchip/rk3568-ecloudbook-air-24rtw.dtb` 的结果：
+
+- 有 schema 的节点（i2c、mmc、gpio、pinctrl、regulator、panel 等）**0 个缺失属性、0 个非法取值**
+- 三个自定义节点原先"无 schema"，本补丁已补齐 YAML：
+  - `Documentation/devicetree/bindings/display/rockchip/rockchip,analogix-dp.yaml` 增加 `rockchip,rk3568-edp`
+  - 新增 `Documentation/devicetree/bindings/phy/rockchip,rk3568-edp-phy.yaml`
+  - 新增 `Documentation/devicetree/bindings/power/supply/southchip,sc2021.yaml`
+- 仅剩 `/pmic@20/codec`（`rockchip,rk817-codec`）无上游绑定，属于上游缺口，不影响功能
+
+## 7. 上游合并后
 
 VDPU346 系列合入主线后，可直接去掉补丁中 1~7 号提交，仅保留板级驱动补丁；届时把基线与上游同步即可。
