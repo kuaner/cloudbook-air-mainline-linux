@@ -92,6 +92,18 @@ make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
   - 新增 `Documentation/devicetree/bindings/power/supply/southchip,sc2021.yaml`
 - 仅剩 `/pmic@20/codec`（`rockchip,rk817-codec`）无上游绑定，属于上游缺口，不影响功能
 
-## 7. 上游合并后
+## 7. U 盘试跑包（rootfs）
+
+`artifacts/7.3/` 里还有一套可直接试跑的 rootfs：
+
+| 文件 | 说明 |
+| :--- | :--- |
+| `rootfs-7.3.5-cloudbook.ext4.zst` | Debian 13 arm64 + `7.3.5-cloudbook` 模块；LightDM + i3wm + Mesa/Panfrost |
+| `rootfs-7.3.5-cloudbook.tar.zst` | 同一 rootfs 的 tar 包 |
+| `boot_linux_73_v28_usb.img` | 写入 `boot_a`，`root=LABEL=ROOTFS` |
+
+桌面按作者验证过的组合：**LightDM + i3wm + Panfrost**（未采用 Hyprland/Omarchy，Panfrost 只有 GLES 3.1，Hyprland 会回退 GLES 3.0，4 GB 内存也偏紧）。操作步骤见 [`../docs/USB_TEST_KIT_7.3.md`](../docs/USB_TEST_KIT_7.3.md)。
+
+## 8. 上游合并后
 
 VDPU346 系列合入主线后，可直接去掉补丁中 1~7 号提交，仅保留板级驱动补丁；届时把基线与上游同步即可。

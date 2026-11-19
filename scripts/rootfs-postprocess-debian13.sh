@@ -9,16 +9,19 @@
 # Modules are therefore staged in /tmp and copied into /usr/lib/modules.
 set -e
 
-R=/rootfs
+R=${ROOTFS_ROOT:-/rootfs}
+KVER=${KVER:-6.12.117-cloudbook}
+MODULES_TARBALL=${MODULES_TARBALL:-/inputs/modules-6.12.117-cloudbook.tar.gz}
+ROOT_LABEL=${ROOT_LABEL:-EMMC_ROOTFS}
 
-# --- kernel modules for 6.12.117-cloudbook --------------------------------
+# --- kernel modules -------------------------------------------------------
 rm -rf "$R"/usr/lib/modules/*
 rm -rf /tmp/modstage && mkdir -p /tmp/modstage
-tar -xzf /inputs/modules-6.12.117-cloudbook.tar.gz -C /tmp/modstage
+tar -xzf "$MODULES_TARBALL" -C /tmp/modstage
 mkdir -p "$R/usr/lib/modules"
 cp -a /tmp/modstage/lib/modules/. "$R/usr/lib/modules/"
 rm -rf /tmp/modstage
-depmod -b "$R" 6.12.117-cloudbook
+depmod -b "$R" "$KVER"
 
 # --- MT7663S Wi-Fi/BT firmware -------------------------------------------
 mkdir -p "$R/usr/lib/firmware/mediatek"
@@ -29,8 +32,8 @@ cp /inputs/firmware/mt7663_n9_v3.bin /inputs/firmware/mt7663pr2h.bin \
 cp -a /inputs/rootfs_overlay/etc/. "$R/etc/"
 
 # --- root filesystem ------------------------------------------------------
-cat > "$R/etc/fstab" <<'EOF'
-LABEL=EMMC_ROOTFS / ext4 defaults,noatime,commit=120,errors=remount-ro 0 1
+cat > "$R/etc/fstab" <<EOF
+LABEL=$ROOT_LABEL / ext4 defaults,noatime,commit=120,errors=remount-ro 0 1
 tmpfs /tmp tmpfs defaults,nosuid 0 0
 EOF
 
@@ -50,6 +53,15 @@ chroot "$R" useradd -m -s /bin/bash -G sudo cloudbook 2>/dev/null || true
 echo 'cloudbook:cloudbook' | chroot "$R" chpasswd
 echo 'root:cloudbook' | chroot "$R" chpasswd
 
+# --- desktop home configuration (i3 / i3status) ---------------------------
+if [ -d /inputs/rootfs_overlay/home/cloudbook ]; then
+    mkdir -p "$R/home/cloudbook"
+    cp -a /inputs/rootfs_overlay/home/cloudbook/. "$R/home/cloudbook/"
+    chmod 700 "$R/home/cloudbook"
+fi
+mkdir -p "$R/home/cloudbook/Pictures"
+chown -R 1000:1000 "$R/home/cloudbook" 2>/dev/null || true
+
 # --- services (offline enable) -------------------------------------------
 for unit in NetworkManager.service bluetooth.service ssh.service; do
     link="$R/etc/systemd/system/multi-user.target.wants/$unit"
@@ -57,6 +69,14 @@ for unit in NetworkManager.service bluetooth.service ssh.service; do
     mkdir -p "$R/etc/systemd/system/multi-user.target.wants"
     ln -sf "/usr/lib/systemd/system/$unit" "$link"
 done
+
+# Graphical login when a desktop is installed.
+if [ -f "$R/usr/lib/systemd/system/lightdm.service" ]; then
+    ln -sf /usr/lib/systemd/system/lightdm.service \
+           "$R/etc/systemd/system/display-manager.service"
+    ln -sf /usr/lib/systemd/system/graphical.target \
+           "$R/etc/systemd/system/default.target"
+fi
 
 # --- first boot housekeeping ---------------------------------------------
 : > "$R/etc/machine-id" 2>/dev/null || true
