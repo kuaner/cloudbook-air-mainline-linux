@@ -97,6 +97,11 @@ gst-launch-1.0 filesrc location=/path/sample.hevc ! h265parse ! \
 # 电源
 cat /sys/class/power_supply/*/online
 systemctl suspend                         # 合盖/唤醒回归
+
+# ZRAM（4 GB 机器，默认取内存 50%）
+zramctl
+swapon --show                             # /dev/zram0，约 2 GB
+systemctl status zramswap
 ```
 
 ## 6. 已知注意事项

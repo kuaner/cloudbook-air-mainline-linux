@@ -78,6 +78,13 @@ if [ -f "$R/usr/lib/systemd/system/lightdm.service" ]; then
            "$R/etc/systemd/system/default.target"
 fi
 
+# ZRAM swap (4 GB machine) when zram-tools is installed.
+if [ -f "$R/usr/lib/systemd/system/zramswap.service" ]; then
+    mkdir -p "$R/etc/systemd/system/multi-user.target.wants"
+    ln -sf /usr/lib/systemd/system/zramswap.service \
+           "$R/etc/systemd/system/multi-user.target.wants/zramswap.service"
+fi
+
 # --- first boot housekeeping ---------------------------------------------
 : > "$R/etc/machine-id" 2>/dev/null || true
 rm -rf "$R"/var/lib/apt/lists/*

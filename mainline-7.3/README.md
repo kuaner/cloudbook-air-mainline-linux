@@ -46,6 +46,7 @@ make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
 - `CONFIG_MT7663S=m`、`CONFIG_MT7663S_W103D_COMBO=y`
 - `CONFIG_CHARGER_SC2021=y`、`CONFIG_CHARGER_BQ25700=y`
 - `CONFIG_PHY_ROCKCHIP_NANENG_EDP=y`
+- `CONFIG_ZRAM=m`、`CONFIG_ZSMALLOC=m`（4 GB 机器；rootfs 内 `zram-tools` 启用，`PERCENT=50`、`ALGO=lz4`，lz4 已内置于内核）
 
 ## 3. 产物
 
