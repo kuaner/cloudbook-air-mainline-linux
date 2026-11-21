@@ -30,8 +30,8 @@
 | **蓝牙** | MediaTek MT7663S SDIO (`037a:7663`) | ✅ 正常 | `btmtksdio` + `0006` 共享 eFuse 生命周期协调 + BlueZ |
 | **键盘 / 触控板** | SINO WEALTH (`258a:0001`) / I2C-HID (`0911:5288`) | ✅ 正常 | USB3 Host + `GPIO0_C7` 供电；触控板双 GPIO 上电时序 (`GPIO3_B4` → `10ms` → `GPIO3_A1`) + libinput 轻触点击 |
 | **音频** | RK809 Codec + 3.5mm 耳机 + PDM 数字麦 | ✅ 正常 | 扬声器 (`GPIO3_C3`)、耳机检测 (`GPIO3_C2`) 与耳放 (`GPIO0_C3`)、PDM 麦 (`GPIO2_D6`) |
-| **电源 / PD / 电池** | 南芯 SC2021 + TI BQ25700/25703A + SBS 电池 | ✅ 正常 | `0008` 驱动支持 PD 快充阶梯与充电管理；禁 `&sdmmc0` 避免 `GPIO0_A4` 中断冲突 |
-| **盒盖休眠** | 霍尔传感器 (`GPIO0_B7`, `SW_LID`) | ✅ 正常 | `v27` 父节点上拉 + `v28` USB2 PHY `utmi` 休眠时钟修复 + `logind`/`sleep.conf` (`mem`) |
+| **电源 / PD / 电池** | 南芯 SC2021 + TI BQ25700/25703A + SBS 电池 | ✅ 正常 | `0008` 驱动支持 PD 快充阶梯、充电管理与 `GPIO0_A4` 休眠插拔唤醒；`0014` 对齐原厂充/满电状态与 LED 触发；`v30` 补回 `charge-animation` + `rk817,battery` 恢复原厂 U-Boot 关机充电与开盖开机；禁 `&sdmmc0` 避免 `GPIO0_A4` 中断冲突 |
+| **盒盖休眠 / 指示灯** | 霍尔传感器 (`GPIO0_B7`, `SW_LID`) + 电源/充电 LED | ✅ 正常 | `v27` 父节点上拉 + `v28` USB2 PHY `utmi` 休眠时钟修复 + `logind`/`sleep.conf` (`mem`)；`v30` 绑定电源键白灯 (`GPIO0_C2`)、Type-C 橙/绿充电灯 (`GPIO0_C5`/`C6`) 并支持休眠中插拔刷新与关机充电亮灯 |
 | **摄像头 / USB** | UVC 摄像头 (`1bcf:2ced`) / USB 3.0 & 2.0 Hub | ✅ 正常 | 摄像头使能 `GPIO3_A2`；USB2 Hub 低电平释放 (`GPIO0_B0=0`)；`0001` 支持 SR9900 USB 网卡 |
 | **视频硬解** | Rockchip Hantro VPU (`/dev/video1`) + RGA | 🟡 部分 | 支持 **H.264 / VP8 / MPEG-2** V4L2 Stateless 硬解（GStreamer `v4l2codecs` + `xvimagesink`，推荐 `gst-play-1.0` / `parole`）；Linux 6.12 无 RK3568 `rkvdec2`，HEVC/VP9 走软解 |
 
@@ -46,8 +46,8 @@
 ├── .gitignore                             # 严格隔离内核树、备份与闭源二进制
 ├── mainline-6.12/
 │   ├── config-6.12.117-cloudbook          # 已验证的 Linux 6.12.117 内核配置
-│   ├── rk3568-ecloudbook-air-24rtw*.dts   # 分层演进 DTS 源码（最终入口为 v29-emmc-rootfs.dts）
-│   ├── patches/                           # 完整内核补丁序列 (0001 ~ 0013)
+│   ├── rk3568-ecloudbook-air-24rtw*.dts   # 分层演进 DTS 源码（最终入口为 v30-charging-led.dts）
+│   ├── patches/                           # 完整内核补丁序列 (0001 ~ 0014)
 │   ├── README.md & TESTPLAN.md            # 6.12 构建与验收边界说明
 ├── docs/
 │   ├── board-profile.md                   # 硬件事实源与外设状态矩阵
@@ -80,7 +80,7 @@
 # 安装交叉编译/LLVM 工具链 (clang, lld, llvm, dtc, python3) 后执行：
 BUILD_MODULES=1 ./build_kernel_612.sh
 ```
-脚本会自动同步 `mainline-6.12/rk3568-ecloudbook-air-24rtw*.dts`、按需应用 `mainline-6.12/patches/0001`~`0012`（跳开诊断性 `0002` 与已被 `v23` 替代的 `0004`），并输出 `Image` 与 `rk3568-ecloudbook-air-24rtw.dtb`。
+脚本会自动同步 `mainline-6.12/rk3568-ecloudbook-air-24rtw*.dts`、按需应用 `mainline-6.12/patches/0001`~`0014`（跳开诊断性 `0002` 与已被 `v23` 替代的 `0004`），并输出 `Image` 与 `rk3568-ecloudbook-air-24rtw.dtb`。
 
 ### 3. 打包 `boot_a` 镜像
 ```bash

@@ -6,7 +6,7 @@ ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 SRC_DIR="$ROOT_DIR/linux-6.12"
 OUT_DIR="$ROOT_DIR/kernel_build/out-6.12"
 DTS_NAME=rk3568-ecloudbook-air-24rtw
-DTS_SRC=${DTS_SRC:-"$ROOT_DIR/mainline-6.12/rk3568-ecloudbook-air-24rtw-v29-emmc-rootfs.dts"}
+DTS_SRC=${DTS_SRC:-"$ROOT_DIR/mainline-6.12/rk3568-ecloudbook-air-24rtw-v30-charging-led.dts"}
 JOBS=${JOBS:-$(nproc)}
 BUILD_MODULES=${BUILD_MODULES:-0}
 
@@ -59,6 +59,7 @@ apply_patch_if_missing 'RK3568_EDP' "drivers/gpu/drm/rockchip/analogix_dp-rockch
 apply_patch_if_missing 'mt7663s_w103d_sanitize_wiphy' "drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c" "0011-mt76-mt7663s-w103d-sanitize-wiphy.patch"
 apply_patch_if_missing 'mt7663s_w103d_vendor_disconnect_bss' "drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c" "0012-mt76-mt7663s-w103d-fix-band-switch-disconnect.patch"
 apply_patch_if_missing 'mt7663s_w103d_sync_vendor_connect' "drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c" "0013-mt76-mt7663s-w103d-tx-ampdu-and-sdio-throughput.patch"
+apply_patch_if_missing 'sbs_resolve_status' "drivers/power/supply/sbs-battery.c" "0014-power-supply-sbs-align-charging-led-status.patch"
 
 # Keep storage, UART, USB Rootfs, PMIC and display support built into the kernel;
 # keep P4 peripheral drivers (=y/=m) aligned with config-6.12.117-cloudbook.

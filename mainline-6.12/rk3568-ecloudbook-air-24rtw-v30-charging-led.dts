@@ -1,0 +1,102 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * ZTE CloudBook Air (CT2000-24RTW / RK3568B2)
+ * v30: Align charging/full indicator LED triggers & suspend behavior with factory 4.19
+ *  - Bind charging_led (GPIO0_PC5, red/orange) to "sbs-0-000b-charging"
+ *  - Bind battery_full_led (GPIO0_PC6, green) to "sbs-0-000b-full"
+ *  - Add retain-state-suspended on both charging/full LEDs (matching factory 4.19)
+ *  - Keep power_led (GPIO0_PC2, white power button LED) without retain-state-suspended
+ *    so it stays ON when awake and turns OFF in suspend/shutdown.
+ */
+
+#include "rk3568-ecloudbook-air-24rtw-v29-emmc-rootfs.dts"
+
+&charging_led {
+	linux,default-trigger = "sbs-0-000b-charging";
+	retain-state-suspended;
+};
+
+&battery_full_led {
+	linux,default-trigger = "sbs-0-000b-full";
+	retain-state-suspended;
+};
+
+/*
+ * Enable factory U-Boot off-mode charging (rockchip,uboot-charge).
+ * Also expose factory fallback compatibles/properties on battery_gauge and
+ * bq25703 so U-Boot's zte,smart_battery & ti,bq25703 drivers can bind while
+ * Linux 6.12 keeps binding sbs,sbs-battery & ti,bq25703a.
+ */
+/ {
+	charge-animation {
+		compatible = "rockchip,uboot-charge";
+		rockchip,uboot-charge-on = <1>;
+		rockchip,android-charge-on = <0>;
+		rockchip,uboot-low-power-voltage = <6400>;
+		rockchip,screen-on-voltage = <0>;
+		rockchip,auto-wakeup-interval = <30>;
+		rockchip,auto-wakeup-screen-invert = <0>;
+		status = "okay";
+	};
+};
+
+&battery_gauge {
+	compatible = "sbs,sbs-battery", "zte,smart_battery";
+	zte,battery-name-gf-25wh = "NB0247-26A589";
+	zte,battery-name-gf-28wh = "NB0150-248596";
+	zte,battery-name-gf-38wh = "NB0318-2795B4";
+	zte,battery-name-gf2-38wh = "NB0333-3678B9";
+	zte,battery-name-gf3-38wh = "NB0318-2895B4";
+	zte,battery-name-gf-40wh = "NB0150-278596";
+	zte,battery-name-scud-25wh = "SNZX001";
+	zte,battery-name-scud-38wh = "SNZX002";
+};
+
+&bq25703 {
+	compatible = "ti,bq25703a", "ti,bq25703";
+	ti,charge-current = <3000000>;
+	ti,charge-current-25wh = <3000000>;
+	ti,charge-current-28wh = <2100000>;
+	ti,charge-current-38wh = <3500000>;
+	ti,charge-current-40wh = <3000000>;
+	ti,max-charge-voltage = <8700000>;
+	ti,max-charge-voltage-25wh = <8700000>;
+	ti,max-charge-voltage-28wh = <13200000>;
+	ti,max-charge-voltage-38wh = <8800000>;
+	ti,max-charge-voltage-40wh = <13200000>;
+	ti,minimum-sys-voltage = <7168000>;
+};
+
+/*
+ * Factory U-Boot charge_animation_probe() requires a UCLASS_FG driver with
+ * FG_CAP_FUEL_GAUGE (rk817_fg, bound to "rk817,battery" under rk809),
+ * otherwise probe aborts with -ENODEV and skips off-mode charging.
+ * Mainline Linux 6.12 rk817_charger ignores this node because it lacks
+ * mainline "rockchip,sleep-enter-current-microamp".
+ */
+&rk809 {
+	battery {
+		compatible = "rk817,battery";
+		batid-gpios = <&gpio3 RK_PB2 GPIO_ACTIVE_LOW>;
+		ocv_table = <6400 6792 6930 7107 7241 7304 7324 7338 7362 7405 7439 7504 7578 7672 7765 7866 7985 8109 8189 8327 8500>;
+		design_capacity = <3300>;
+		design_qmax = <3500>;
+		bat_res = <150>;
+		sleep_enter_current = <300>;
+		sleep_exit_current = <300>;
+		sleep_filter_current = <100>;
+		power_off_thresd = <6400>;
+		zero_algorithm_vol = <7700>;
+		max_soc_offset = <60>;
+		monitor_sec = <5>;
+		sample_res = <10>;
+		virtual_power = <0>;
+		bat_res_up = <140>;
+		bat_res_down = <20>;
+		smart_battery_mode = <1>;
+	};
+};
+
+&sc2021 {
+	wakeup-source;
+};

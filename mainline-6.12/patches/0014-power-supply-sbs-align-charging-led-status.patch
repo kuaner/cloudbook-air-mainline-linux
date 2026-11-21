@@ -1,0 +1,176 @@
+From: CloudBook Air Linux Port <port@cloudbookair.local>
+Subject: [PATCH] power: supply: sbs-battery: align status with external charger and fast LED updates
+
+Align SBS smart battery status reporting with the factory 4.19 rk817_battery
+behavior so the charging/full LED triggers and desktop power status track
+charger plug/unplug transitions accurately:
+
+1. Add sbs_resolve_status() taking psy explicitly and consult
+   power_supply_am_i_supplied() (linked to bq25703-charger via DT
+   power-supplies):
+   - When no external charger is online (supplied == 0), always report
+     POWER_SUPPLY_STATUS_DISCHARGING so charging/full LEDs turn off
+     immediately on unplug even if SBS BatteryStatus (0x16) lags.
+   - When an external charger is online (supplied > 0), report FULL if
+     BATTERY_FULL_CHARGED is set and CHARGING otherwise, so trickle or
+     low-power 5V charging keeps the charging LED lit even if battery
+     current is zero or slightly negative.
+2. Never overwrite chip->last_state without notifying power_supply_changed()
+   when STATUS changes, so charger drivers or userspace polling STATUS before
+   sbs_delayed_work() do not swallow LED trigger updates. Also sync
+   power_supply_changed() once at the end of sbs_probe().
+3. Tighten sbs_external_power_changed() work delay from 1s (HZ) to 50 ms
+   for prompt LED feedback on Type-C hotplug.
+4. Add sbs_resume() to re-sync battery status and LEDs immediately after
+   suspend/resume.
+---
+--- a/drivers/power/supply/sbs-battery.c
++++ b/drivers/power/supply/sbs-battery.c
+@@ -504,6 +504,43 @@
+ 	return 0;
+ }
+ 
++static int sbs_resolve_status(struct power_supply *psy, struct sbs_info *chip,
++			      s32 reg_status)
++{
++	struct power_supply *bat_psy = psy ? psy : chip->power_supply;
++	int supplied;
++	int status;
++
++	if (reg_status & BATTERY_FULL_CHARGED)
++		status = POWER_SUPPLY_STATUS_FULL;
++	else if (reg_status & BATTERY_DISCHARGING)
++		status = POWER_SUPPLY_STATUS_DISCHARGING;
++	else
++		status = POWER_SUPPLY_STATUS_CHARGING;
++
++	sbs_status_correct(chip->client, &status);
++
++	if (bat_psy) {
++		supplied = power_supply_am_i_supplied(bat_psy);
++		if (supplied == 0) {
++			/* External charger offline: always report discharging. */
++			status = POWER_SUPPLY_STATUS_DISCHARGING;
++		} else if (supplied > 0) {
++			/*
++			 * External charger online: align with factory 4.19
++			 * behavior so trickle/low-current charging still lights
++			 * the charging LED unless the gauge reports full.
++			 */
++			if (reg_status & BATTERY_FULL_CHARGED)
++				status = POWER_SUPPLY_STATUS_FULL;
++			else
++				status = POWER_SUPPLY_STATUS_CHARGING;
++		}
++	}
++
++	return status;
++}
++
+ static bool sbs_bat_needs_calibration(struct i2c_client *client)
+ {
+ 	int ret;
+@@ -608,8 +645,8 @@
+ 	return 0;
+ }
+ 
+-static int sbs_get_battery_property(struct i2c_client *client,
+-	int reg_offset, enum power_supply_property psp,
++static int sbs_get_battery_property(struct power_supply *psy,
++	struct i2c_client *client, int reg_offset, enum power_supply_property psp,
+ 	union power_supply_propval *val)
+ {
+ 	struct sbs_info *chip = i2c_get_clientdata(client);
+@@ -644,21 +681,13 @@
+ 			return 0;
+ 		}
+ 
+-		if (ret & BATTERY_FULL_CHARGED)
+-			val->intval = POWER_SUPPLY_STATUS_FULL;
+-		else if (ret & BATTERY_DISCHARGING)
+-			val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
+-		else
+-			val->intval = POWER_SUPPLY_STATUS_CHARGING;
+-
+-		sbs_status_correct(client, &val->intval);
++		val->intval = sbs_resolve_status(psy, chip, ret);
+ 
+-		if (chip->poll_time == 0)
++		if (chip->power_supply && chip->last_state != val->intval) {
+ 			chip->last_state = val->intval;
+-		else if (chip->last_state != val->intval) {
++			chip->poll_time = 0;
+ 			cancel_delayed_work_sync(&chip->work);
+ 			power_supply_changed(chip->power_supply);
+-			chip->poll_time = 0;
+ 		}
+ 	} else {
+ 		if (psp == POWER_SUPPLY_PROP_STATUS)
+@@ -985,7 +1014,7 @@
+ 		if (ret < 0)
+ 			break;
+ 
+-		ret = sbs_get_battery_property(client, ret, psp, val);
++		ret = sbs_get_battery_property(psy, client, ret, psp, val);
+ 		break;
+ 
+ 	case POWER_SUPPLY_PROP_MODEL_NAME:
+@@ -1073,7 +1102,7 @@
+ 	/* cancel outstanding work */
+ 	cancel_delayed_work_sync(&chip->work);
+ 
+-	schedule_delayed_work(&chip->work, HZ);
++	schedule_delayed_work(&chip->work, msecs_to_jiffies(50));
+ 	chip->poll_time = chip->poll_retry_count;
+ }
+ 
+@@ -1091,16 +1120,10 @@
+ 		return;
+ 	}
+ 
+-	if (ret & BATTERY_FULL_CHARGED)
+-		ret = POWER_SUPPLY_STATUS_FULL;
+-	else if (ret & BATTERY_DISCHARGING)
+-		ret = POWER_SUPPLY_STATUS_DISCHARGING;
+-	else
+-		ret = POWER_SUPPLY_STATUS_CHARGING;
+-
+-	sbs_status_correct(chip->client, &ret);
++	ret = sbs_resolve_status(chip->power_supply, chip, ret);
+ 
+ 	if (chip->last_state != ret) {
++		chip->last_state = ret;
+ 		chip->poll_time = 0;
+ 		power_supply_changed(chip->power_supply);
+ 		return;
+@@ -1228,6 +1251,7 @@
+ 	}
+ 
+ out:
++	power_supply_changed(chip->power_supply);
+ 	dev_info(&client->dev,
+ 		"%s: battery gas gauge device registered\n", client->name);
+ 
+@@ -1257,7 +1281,21 @@
+ 	return 0;
+ }
+ 
+-static SIMPLE_DEV_PM_OPS(sbs_pm_ops, sbs_suspend, NULL);
++static int sbs_resume(struct device *dev)
++{
++	struct i2c_client *client = to_i2c_client(dev);
++	struct sbs_info *chip = i2c_get_clientdata(client);
++
++	if (chip->power_supply) {
++		cancel_delayed_work_sync(&chip->work);
++		chip->poll_time = chip->poll_retry_count;
++		schedule_delayed_work(&chip->work, msecs_to_jiffies(50));
++	}
++
++	return 0;
++}
++
++static SIMPLE_DEV_PM_OPS(sbs_pm_ops, sbs_suspend, sbs_resume);
+ #define SBS_PM_OPS (&sbs_pm_ops)
+ 
+ #else
