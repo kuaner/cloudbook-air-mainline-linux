@@ -29,7 +29,7 @@
 | **Wi-Fi** | MediaTek MT7663S SDIO (`037a:7603`) | ✅ 正常 | `0005` 隔离驱动 + `0007` 速率上报 + `0011` 屏蔽 P2P/ROC/sched_scan + `0012` 修复 2.4G→5G 切频认证超时 + `0013` 启用 2.4G/5G 固件 RA 与 TX A-MPDU 并优化 SDIO 吞吐；标准 `CMD11` SDR104 |
 | **蓝牙** | MediaTek MT7663S SDIO (`037a:7663`) | ✅ 正常 | `btmtksdio` + `0006` 共享 eFuse 生命周期协调 + BlueZ |
 | **键盘 / 触控板** | SINO WEALTH (`258a:0001`) / I2C-HID (`0911:5288`) | ✅ 正常 | USB3 Host + `GPIO0_C7` 供电；触控板双 GPIO 上电时序 (`GPIO3_B4` → `10ms` → `GPIO3_A1`) + libinput 轻触点击 |
-| **音频** | RK809 Codec + 3.5mm 耳机 + PDM 数字麦 | ✅ 正常 | 扬声器 (`GPIO3_C3`)、耳机检测 (`GPIO3_C2`) 与耳放 (`GPIO0_C3`)、PDM 麦 (`GPIO2_D6`) |
+| **音频** | RK809 Codec + 3.5mm 耳机 + PDM 数字麦 | ✅ 正常 | 扬声器 (`GPIO3_C3`)、耳机检测 (`GPIO3_C2`) 与耳放 (`GPIO0_C3`)、PDM 麦 (`GPIO2_D6`)；配合 `alsa-ucm-conf` + `rootfs_overlay/usr/share/alsa/ucm2/` 实现 3.5mm 耳机插拔自动静音喇叭并切换音频路由 |
 | **电源 / PD / 电池** | 南芯 SC2021 + TI BQ25700/25703A + SBS 电池 | ✅ 正常 | `0008` 驱动支持 PD 快充阶梯、充电管理与 `GPIO0_A4` 休眠插拔唤醒；`0014` 对齐原厂充/满电状态与 LED 触发；`v30` 补回 `charge-animation` + `rk817,battery` 恢复原厂 U-Boot 关机充电与开盖开机；禁 `&sdmmc0` 避免 `GPIO0_A4` 中断冲突 |
 | **盒盖休眠 / 指示灯** | 霍尔传感器 (`GPIO0_B7`, `SW_LID`) + 电源/充电 LED | ✅ 正常 | `v27` 父节点上拉 + `v28` USB2 PHY `utmi` 休眠时钟修复 + `logind`/`sleep.conf` (`mem`)；`v30` 绑定电源键白灯 (`GPIO0_C2`)、Type-C 橙/绿充电灯 (`GPIO0_C5`/`C6`) 并支持休眠中插拔刷新与关机充电亮灯 |
 | **摄像头 / USB** | UVC 摄像头 (`1bcf:2ced`) / USB 3.0 & 2.0 Hub | ✅ 正常 | 摄像头使能 `GPIO3_A2`；USB2 Hub 低电平释放 (`GPIO0_B0=0`)；`0001` 支持 SR9900 USB 网卡 |
@@ -55,7 +55,7 @@
 │   ├── REVERSE_ENGINEERING_NOTES.md       # Android 4.19 & U-Boot 逆向核心结论汇总
 │   ├── OTG_RECOVERY.md                    # OTG Rockusb / UMS / UART 热键恢复手册
 │   └── cloudbook-air-mainline/            # P0~P4 阶段详细排障与工程记录
-├── rootfs_overlay/etc/                    # 板级配置模板（背光 udev、触控板、LightDM、合盖休眠）
+├── rootfs_overlay/                        # 板级配置模板（背光 udev、触控板、LightDM、合盖休眠、RK809 ALSA UCM2 路由）
 ├── build_kernel_612.sh                    # 一键应用补丁并编译 Image / DTB（LLVM/Clang）
 ├── build_boot_linux_612.sh                # 一键打包 Android Boot Image v2 (boot_a)
 ├── pack_boot_linux.py                     # Rockchip RSCE + Android boot v2 打包脚本
@@ -89,7 +89,7 @@ BUILD_MODULES=1 ./build_kernel_612.sh
 生成 `<= 160 MiB` 的 Rockchip Android Boot Image v2 镜像，校验 DTB 内 `__symbols__`、`chosen` 与 `reboot_mode`。
 
 ### 4. 部署桌面与多媒体调优要点
-* **系统配置模板**：将 `rootfs_overlay/etc/` 下配置拷入目标系统 `/etc/`，并在 `apt upgrade` 后避免让发行版脚本覆写未签名 `boot_a`（本机已验证可清理无关的 `linux-image-current-rockchip64`）。
+* **系统配置模板**：安装 `alsa-ucm-conf` 后将 `rootfs_overlay/` 下配置拷入目标系统 `/`（含 `/etc/` 与 `/usr/share/alsa/ucm2/`，用于耳机插拔自动静音喇叭与合盖休眠），并在 `apt upgrade` 后避免让发行版脚本覆写未签名 `boot_a`（本机已验证可清理无关的 `linux-image-current-rockchip64`）。
 * **H.264 视频硬解**：`vlc` 与 `mpv`（走 FFmpeg）暂不支持无 `v4l2-request` 补丁的 RK3568 Hantro 硬解。安装 **`gstreamer1.0-plugins-bad`** + `gstreamer1.0-x` + `parole` 后，将 `parole` 输出设为 `xvimagesink`（避开默认 `autoimagesink` 回退 `ximagesink` 或 `glimagesink` 导致掉帧）：
   ```bash
   xfconf-query -c parole -p /video/videosink -n -t string -s xvimagesink
