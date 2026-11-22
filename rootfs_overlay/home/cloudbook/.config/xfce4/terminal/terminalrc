@@ -1,0 +1,17 @@
+[Configuration]
+FontName=JetBrains Mono 12
+FontUseSystem=FALSE
+ColorForeground=#c8ccd4
+ColorBackground=#1e222a
+ColorCursor=#da6e89
+ColorSelectionUseDefault=FALSE
+ColorSelection=#45475a
+ColorSelectionUseForeground=FALSE
+ColorBoldUseDefault=FALSE
+ColorBold=#abb2bf
+ColorPalette=#1e222a;#e06c75;#98c379;#e5c07b;#61afef;#c678dd;#56b6c2;#abb2bf;#5c6370;#e06c75;#98c379;#e5c07b;#61afef;#c678dd;#56b6c2;#ffffff
+MiscAlwaysShowTabs=FALSE
+MiscShowUnsafePasteDialog=FALSE
+MiscMenubarDefault=FALSE
+MiscToolbarDefault=FALSE
+TitleMode=0

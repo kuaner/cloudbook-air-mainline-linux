@@ -1,0 +1,19 @@
+<?xml version="1.1" encoding="UTF-8"?>
+
+<channel name="xfce4-terminal" version="1.0">
+  <property name="color-foreground" type="string" value="#c8ccd4"/>
+  <property name="color-background" type="string" value="#1e222a"/>
+  <property name="color-cursor" type="string" value="#da6e89"/>
+  <property name="color-selection" type="string" value="#45475a"/>
+  <property name="color-selection-use-default" type="bool" value="false"/>
+  <property name="color-bold" type="string" value="#abb2bf"/>
+  <property name="color-bold-use-default" type="bool" value="false"/>
+  <property name="color-palette" type="string" value="#1e222a;#e06c75;#98c379;#e5c07b;#61afef;#c678dd;#56b6c2;#abb2bf;#5c6370;#e06c75;#98c379;#e5c07b;#61afef;#c678dd;#56b6c2;#ffffff"/>
+  <property name="font-name" type="string" value="JetBrains Mono 12"/>
+  <property name="font-use-system" type="bool" value="false"/>
+  <property name="misc-always-show-tabs" type="bool" value="false"/>
+  <property name="misc-menubar-default" type="bool" value="false"/>
+  <property name="misc-toolbar-default" type="bool" value="false"/>
+  <property name="misc-show-unsafe-paste-dialog" type="bool" value="false"/>
+  <property name="title-mode" type="string" value="TERMINAL_TITLE_REPLACE"/>
+</channel>

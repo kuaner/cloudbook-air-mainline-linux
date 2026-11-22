@@ -1,0 +1,34 @@
+#!/bin/sh
+# Prefer a USB root filesystem over the internal eMMC install.
+#
+# The boot cmdline still names root=LABEL=EMMC_ROOTFS, so this image starts the
+# internal system when no removable media is present. When a filesystem
+# labelled ROOTFS appears on a USB disk, this hook points ROOT at it first, so
+# the same boot_a image can start a rescue/flash USB system.
+
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+
+case "$1" in
+prereqs)
+    prereqs
+    exit 0
+    ;;
+esac
+
+# ext4 superblock starts at 0x400; s_volume_name is 16 bytes at 0x478.
+ext4_label() {
+    dd if="$1" bs=8 skip=143 count=2 2>/dev/null | tr -d '\000'
+}
+
+# Scripts in local-top run as child processes, so an exported ROOT never
+# reaches the parent. initramfs-tools sources /conf/param.conf after each
+# script, which is the supported way to override variables.
+for dev in /dev/sd*[0-9] /dev/sd* /dev/vd*[0-9] /dev/vd*; do
+    [ -b "$dev" ] || continue
+    if [ "$(ext4_label "$dev")" = "ROOTFS" ]; then
+        echo "CLOUDBOOK USB root found at $dev, preferring it over eMMC"
+        printf 'ROOT=%s\n' "$dev" >> /conf/param.conf
+        break
+    fi
+done

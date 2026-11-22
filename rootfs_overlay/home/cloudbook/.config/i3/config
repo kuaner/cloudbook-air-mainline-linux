@@ -2,15 +2,62 @@
 # Mod4 (Windows key) is the modifier, matching the author's desktop setup.
 
 set $mod Mod4
-font pango:DejaVu Sans Mono 10
+font pango:DejaVu Sans Mono, Noto Sans CJK SC 10
+
+# Catppuccin Mocha for i3 (c072ada), MIT; see themes/LICENSE.
+set $rosewater #f5e0dc
+set $flamingo #f2cdcd
+set $pink #f5c2e7
+set $mauve #cba6f7
+set $red #f38ba8
+set $maroon #eba0ac
+set $peach #fab387
+set $yellow #f9e2af
+set $green #a6e3a1
+set $teal #94e2d5
+set $sky #89dceb
+set $sapphire #74c7ec
+set $blue #89b4fa
+set $lavender #b4befe
+set $text #cdd6f4
+set $subtext1 #bac2de
+set $subtext0 #a6adc8
+set $overlay2 #9399b2
+set $overlay1 #7f849c
+set $overlay0 #6c7086
+set $surface2 #585b70
+set $surface1 #45475a
+set $surface0 #313244
+set $base #1e1e2e
+set $mantle #181825
+set $crust #11111b
+
+client.focused           #da6e89 #da6e89 #1e222a #98c379 #da6e89
+client.focused_inactive  #61afef #61afef #1e222a #98c379 #61afef
+client.unfocused         #292e39 #292e39 #c8ccd4 #98c379 #292e39
+client.urgent            #c678dd #c678dd #c8ccd4 #98c379 #c678dd
+client.placeholder       #1e222a #1e222a #c8ccd4 #98c379 #1e222a
+client.background        #1e222a
+default_border pixel 2
+gaps inner 10
+smart_gaps off
 
 # Dark root background so the desktop is usable before a wallpaper is set.
 exec --no-startup-id xsetroot -solid "#1e1e2e"
+exec --no-startup-id hsetroot -cover ~/Pictures/tokyo.png
+exec --no-startup-id dunst
+exec --no-startup-id picom --config ~/.config/picom.conf
 
 # Terminal and launchers
-bindsym $mod+Return exec xterm
-bindsym $mod+d exec dmenu_run
-bindsym $mod+Shift+d exec rofi -show drun
+bindsym $mod+Return exec xfce4-terminal
+bindsym $mod+n exec xfce4-terminal --title=Wi-Fi -x nmtui-connect
+bindsym $mod+d exec rofi -show drun -theme ~/.config/rofi/archcraft.rasi
+bindsym $mod+Shift+d exec rofi -show run -theme ~/.config/rofi/archcraft.rasi
+bindsym $mod+Shift+f exec pcmanfm
+exec --no-startup-id nm-applet
+exec --no-startup-id lxpolkit
+# Chinese input method (Ctrl+Space toggles between pinyin and keyboard).
+exec --no-startup-id fcitx5 -d
 
 # Window management
 bindsym $mod+q kill
@@ -72,12 +119,18 @@ bindsym XF86MonBrightnessDown exec brightnessctl set 10%-
 bindsym $mod+Shift+x exec i3lock -c 1e1e2e
 bindsym Print exec scrot '%Y-%m-%d-%H%M%S.png' -e 'mv $f ~/Pictures/'
 
-bar {
-    status_command i3status
-    position top
-    colors {
-        background #1e1e2e
-        statusline #cdd6f4
-        separator  #313244
-    }
-}
+#bar {
+#    status_command i3status
+#    position top
+#    colors {
+#        background         $base
+#        statusline         $text
+#        separator          $surface0
+#        focused_workspace  $base $mauve    $crust
+#        active_workspace   $base $surface2 $text
+#        inactive_workspace $base $base     $text
+#        urgent_workspace   $base $red      $crust
+#    }
+#}
+
+exec_always --no-startup-id pkill -x polybar; sleep 0.3; exec polybar -c ~/.config/polybar/archcraft.ini main >/tmp/polybar.log 2>&1

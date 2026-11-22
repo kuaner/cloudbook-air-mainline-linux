@@ -1,0 +1,15 @@
+[Unit]
+Description=Mark the active A/B slot as successfully booted
+Documentation=man:systemd.special(7)
+After=local-fs.target
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cloudbook-mark-boot-successful
+RemainAfterExit=yes
+# A failure must never hold up the boot; the slot simply keeps its tries.
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target

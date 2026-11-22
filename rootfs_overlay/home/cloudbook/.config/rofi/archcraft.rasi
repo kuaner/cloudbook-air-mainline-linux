@@ -1,0 +1,20 @@
+* {
+    background-color: #1e222a;
+    text-color:       #c8ccd4;
+    border-color:     #da6e89;
+    font:             "JetBrains Mono 10";
+}
+window {
+    width: 42%;
+    border: 2px;
+    border-radius: 0px;
+    padding: 0px;
+}
+inputbar {
+    padding: 8px;
+    background-color: #292e39;
+    text-color: #da6e89;
+}
+listview { lines: 8; columns: 1; }
+element { padding: 6px; }
+element selected { background-color: #da6e89; text-color: #1e222a; }

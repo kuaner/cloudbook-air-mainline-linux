@@ -4,33 +4,27 @@ general {
 }
 
 order += "wireless _first_"
-order += "ethernet _first_"
-order += "battery all"
-order += "disk /"
-order += "load"
+order += "read_file Battery"
+order += "read_file Power"
 order += "tztime local"
 
 wireless _first_ {
     format_up = "W: %essid %quality"
-    format_down = "W: down"
+    format_down = "W: down (Win+N)"
 }
 
-ethernet _first_ {
-    format_up = "E: %ip"
-    format_down = "E: down"
+read_file Battery {
+    path = "/sys/class/power_supply/sbs-0-000b/capacity"
+    format = "BAT %content%"
+    format_bad = "Battery unavailable"
 }
 
-battery all {
-    format = "%status %percentage %remaining"
+read_file Power {
+    path = "/sys/class/power_supply/sbs-0-000b/status"
+    format = "%content"
+    format_bad = ""
 }
 
-disk "/" {
-    format = "D: %free"
-}
-
-load {
-    format = "L: %1min"
-}
 
 tztime local {
     format = "%Y-%m-%d %H:%M"
