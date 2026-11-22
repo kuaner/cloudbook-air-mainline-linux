@@ -1,0 +1,16 @@
+# Physical USB GPT partitions. No slotselect, logical, dm-verity or AVB flags:
+# first-stage init waits for these partition names and mounts them directly.
+/dev/block/platform/usbhost/by-name/usb_system /system ext4 ro,barrier=1 wait,first_stage_mount
+/dev/block/platform/usbhost/by-name/usb_vendor /vendor ext4 ro,barrier=1 wait,first_stage_mount
+/dev/block/platform/usbhost/by-name/usb_odm /odm ext4 ro,barrier=1 wait,first_stage_mount
+/dev/block/platform/usbhost/by-name/usb_product /product ext4 ro,barrier=1 wait,first_stage_mount
+/dev/block/platform/usbhost/by-name/usb_system_ext /system_ext ext4 ro,barrier=1 wait,first_stage_mount
+/dev/block/platform/usbhost/by-name/usb_system_dlkm /system_dlkm ext4 ro,barrier=1 wait,first_stage_mount
+/dev/block/platform/usbhost/by-name/usb_vendor_dlkm /vendor_dlkm ext4 ro,barrier=1 wait,first_stage_mount
+/dev/block/platform/usbhost/by-name/usb_odm_dlkm /odm_dlkm ext4 ro,barrier=1 wait,first_stage_mount
+
+/dev/block/platform/usbhost/by-name/usb_metadata /metadata ext4 nodev,noatime,nosuid,discard,sync wait,check,formattable,first_stage_mount
+/dev/block/platform/usbhost/by-name/usb_userdata /data ext4 discard,noatime,nosuid,nodev,noauto_da_alloc,user_xattr,barrier=1 latemount,wait,check,formattable,fileencryption=none,quota,reservedsize=128M,checkpoint=fs
+
+/dev/block/zram0 none swap defaults zramsize=50%
+

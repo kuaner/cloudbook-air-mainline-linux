@@ -1,0 +1,20 @@
+on early-init
+    write /proc/sys/kernel/printk "8 4 1 7"
+    setprop ro.product.model CloudBook Air Android 14 USB
+    setprop ro.product.manufacturer ZTE
+    setprop persist.sys.timezone Asia/Shanghai
+    setprop persist.sys.usb.config adb
+    setprop persist.vendor.init_usb 0
+    setprop persist.internet_adb_enable 1
+
+on late-fs
+    start cloudbook_usb_diagnostics
+
+service cloudbook_usb_diagnostics /system/bin/sh /system/etc/init/cloudbook-usb-diagnostics.sh
+    class core
+    user root
+    group root shell
+    disabled
+    oneshot
+
+

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>打开 Android 系统设置</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Noto Sans CJK SC", sans-serif;
+         background:#101114; color:#eee; margin:0; padding:24px; line-height:1.5; }
+  h1 { font-size:22px; margin:0 0 8px; }
+  p { color:#b9bdc7; }
+  a.btn { display:block; background:#2d7ff9; color:#fff; text-decoration:none;
+          padding:16px; border-radius:12px; margin:12px 0; font-size:17px;
+          text-align:center; }
+  a.alt { background:#2b2f36; }
+  small { color:#8b919c; }
+  code { background:#22262d; padding:2px 6px; border-radius:4px; }
+</style>
+</head>
+<body>
+<h1>打开 Android 系统设置</h1>
+<p>点下面的按钮。浏览器问“打开外部应用 / 离开此网站”时选“打开 / 允许”。</p>
+
+<a class="btn" href="intent://#Intent;action=android.settings.SETTINGS;end">打开设置（方式 1）</a>
+<a class="btn" href="intent://#Intent;action=android.settings.SETTINGS;package=com.android.settings;end">打开设置（方式 2）</a>
+<a class="btn" href="intent://settings/#Intent;action=android.settings.SETTINGS;end">打开设置（方式 3）</a>
+<a class="btn" href="intent:#Intent;action=android.settings.SETTINGS;end">打开设置（方式 4）</a>
+
+<a class="btn alt" href="intent://#Intent;action=android.settings.DEVICE_INFO_SETTINGS;end">直接打开“关于平板”</a>
+<a class="btn alt" href="intent://#Intent;action=android.settings.APPLICATION_DEVELOPMENT_SETTINGS;end">直接打开“开发者选项”</a>
+<a class="btn alt" href="intent://#Intent;action=android.settings.APPLICATION_SETTINGS;end">打开“应用”设置</a>
+<a class="btn alt" href="android-app://com.android.settings">用 android-app:// 打开设置</a>
+
+<p><small>
+如果按钮没反应：长按按钮复制链接，粘贴到地址栏再打开。若全部无反应，说明当前浏览器是
+WebView，不支持 <code>intent:</code>，需要换成 Chrome/系统浏览器。
+</small></p>
+</body>
+</html>

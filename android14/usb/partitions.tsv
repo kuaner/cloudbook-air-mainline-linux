@@ -1,0 +1,11 @@
+usb_system	system_a.img
+usb_vendor	vendor_a.img
+usb_odm	odm_a.img
+usb_product	product_a.img
+usb_system_ext	system_ext_a.img
+usb_system_dlkm	system_dlkm_a.img
+usb_vendor_dlkm	vendor_dlkm_a.img
+usb_odm_dlkm	odm_dlkm_a.img
+usb_metadata	-
+usb_userdata	-
+
