@@ -1,6 +1,6 @@
 # cloudbook-air 主线 7.3.5 移植（含 RK3568 HEVC 硬解 / VDPU346）
 
-> 状态：**全量编译通过、零警告**；真机尚未验证。
+> 已在本机从 U 盘进入 Debian i3 桌面，并核对 RK3568 硬件解码器输出的 1080p H.264 和 HEVC 帧。内屏、光标、Wi-Fi 与电池的实测结果见 [U 盘试跑记录](../docs/USB_TEST_KIT_7.3.md)。
 > 基线：Linux `7.3.5`（stable，2026-11-17）
 > 补丁：`cloudbook-7.3.5-port.patch`，可干净应用于纯净 7.3.5。
 
@@ -19,11 +19,13 @@
 2. **本机板级补丁（从 6.12 适配到 7.3.5）**
    - r8152 SR9900 ID（7.3 上下文变了，手工插入）
    - RK3568 VPLL 659 MHz
-   - MT7663S W103D 隔离驱动 + combo 生命周期 + 0011/0012 加固
+   - MT7663S W103D 隔离驱动 + combo 生命周期 + 0011/0012/0013 加固与吞吐
    - mac80211 速率上报
    - SC2021 + BQ25700 电源（适配 7.3 的 `fwnode` / `power_supply_get_by_reference()`）
    - Naneng eDP PHY
-   - Analogix RK3568 eDP（7.3 上游已自带 PHY 支持，只补 `RK3568_EDP` 枚举、`is_rockchip()` 分支、chip data 数组与 DT 条目）
+   - Analogix RK3568 eDP 板级匹配与 BOE 面板时序。附加补丁 `0001-drm-analogix-dp-pass-lane-count-to-phy.patch` 在设置速率和训练电压时传入实际通道数，满足 Naneng PHY 的参数检查。
+   - 附加补丁 `0002-drm-rockchip-skip-dirtyfb-on-cloudbook-air.patch` 让这块板连续扫描的 VOP2 帧缓冲省去局部重绘通知，针对 Xorg 绘制软件光标时反复等待垂直刷新的问题。使用者已确认 `#9` 的内屏光标恢复平滑。
+   - 附加补丁 `0003-bluetooth-handle-unsupported-local-pairing-options.patch` 处理 MT7663S 在启动时拒绝可选 HCI 命令 `0x100c` 的情况，使初始化能够继续到共享芯片就绪通知。验证范围见[Wi-Fi 连接验证](../docs/USB_TEST_KIT_7.3.md#wi-fi-连接验证)。
 
 ## 2. 复现
 
@@ -32,6 +34,10 @@ curl -fLO https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.3.5.tar.xz
 mkdir -p linux-7.3.5 && tar -xf linux-7.3.5.tar.xz -C linux-7.3.5 --strip-components=1
 cd linux-7.3.5
 git apply path/to/cloudbook-7.3.5-port.patch
+git apply path/to/0013-mt76-mt7663s-w103d-tx-ampdu-and-sdio-throughput.patch
+git apply path/to/0001-drm-analogix-dp-pass-lane-count-to-phy.patch
+git apply path/to/0002-drm-rockchip-skip-dirtyfb-on-cloudbook-air.patch
+git apply path/to/0003-bluetooth-handle-unsupported-local-pairing-options.patch
 
 cp path/to/config-7.3.5-cloudbook .config
 make ARCH=arm64 LLVM=1 olddefconfig
@@ -62,25 +68,22 @@ make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
 
 | 项 | 6.12 主线 | 7.3.5 |
 | :--- | :--- | :--- |
-| HEVC 硬解 | ❌ | ✅ VDPU346（H.264 + HEVC，4K60） |
+| HEVC 硬解 | ❌ | VDPU346，已核对 1080p30 H.264 和 HEVC 样本的解码内容 |
 | VP9 硬解 | ❌（Hantro 无 VP9 on RK3568） | ❌（当前未包含；可补，见 `../docs/VIDEO_DECODE_7X_RESEARCH.md` 第 7 节） |
-| eDP | 自研 PHY + analogix 补丁 | 上游已有 PHY 框架，仅补 RK3568 分支 |
+| eDP | Naneng PHY + Analogix 与 AUX 面板补丁 | Naneng PHY、RK3568 板级匹配与链路训练通道数修复 |
 | 电源 | 自研 API 适配 | `fwnode` / `get_by_reference` 新 API |
 | DTS 基文件 | `rk356x.dtsi` | `rk356x-base.dtsi`（编译一次通过） |
 | LTS | 至 2028-12 | 非 LTS（7.3 stable） |
 
-## 5. 待验证（真机）
+## 5. 真机验证范围
 
 > **Wi-Fi/BT 只使用 W103D 补丁集，不使用主线原生 mt7663s。** 原生驱动在本机同固件上存在已复现的问题（重启后固件挂死、P2P/ROC/sched_scan 触发异常、2.4G↔5G 切频认证超时、Wi-Fi/BT eFuse 初始化竞争），W103D 补丁即为此而存在，不作为可选替代。
 
-1. 启动：UART/HDMI、eMMC、USB
-2. Wi-Fi/BT：W103D 驱动在 7.3 mt76 核心上的运行时行为（编译通过不等于稳定）
-3. eDP 内屏点亮（`RK3568_EDP` 分支）
-4. PD 充电（SC2021/BQ25700）与合盖休眠
-5. HEVC 硬解：
-   - `v4l2-ctl --list-devices` 应出现 `rockchip-vdec`
-   - `fluster -p hevc`（参考：NanoPi R5C 上 142/147）
-   - GStreamer `v4l2slhevcdec`（需 1.28+ 的 v4l2codecs）
+1. USB 根盘已启动，eDP 内屏已进入 i3 桌面。当前试机尚未覆盖 eMMC 根盘与外接 HDMI。
+2. 从本机 Android B 提取配套 MT7663 固件后，5 GHz 通过 12 轮双向传输校验，2.4 GHz 自动回退也通过了传输测试。此前的 ACK 不足发生在使用旧固件时。蓝牙控制器已上电。
+3. 电池已确认充电和放电，状态栏使用板载 SBS 的实时电量与状态。合盖休眠仍需单独测试。
+4. GStreamer 指定 `v4l2slh265dec` 已输出 720p HEVC 样本的全部 48 帧。1080p30 的 H.264 和 HEVC 样本各 60 帧，经指定硬解组件解码后，整段 I420 输出均与 FFmpeg 软件解码的 SHA-256 一致。完整的 `fluster -p hevc` 一致性测试仍待运行。
+5. 桌面镜像将 CPU 最低频率设为 600 MHz，保留 `schedutil`。在 `#8` 真机上，实体触控板通常每 7.27 ms 上报一次，Xorg 在局部刷新时仍会同步等待 VOP2。顶栏开关对照和 `#9` 的验证范围见[鼠标间歇性卡顿](../docs/USB_TEST_KIT_7.3.md#鼠标间歇性卡顿)。
 
 ## 6. DT 绑定校验
 
@@ -99,12 +102,23 @@ make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
 
 | 文件 | 说明 |
 | :--- | :--- |
-| `rootfs-7.3.5-cloudbook.ext4.zst` | Debian 13 arm64 + `7.3.5-cloudbook` 模块；LightDM + i3wm + Mesa/Panfrost |
+| `rootfs-7.3.5-cloudbook.ext4.zst` | Debian 13 arm64 + `7.3.5-cloudbook` 模块；LightDM + i3 + Mesa/Panfrost |
 | `rootfs-7.3.5-cloudbook.tar.zst` | 同一 rootfs 的 tar 包 |
 | `boot_linux_73_v28_usb.img` | 写入 `boot_a`，`root=LABEL=ROOTFS` |
 
-桌面按作者验证过的组合：**LightDM + i3wm + Panfrost**（未采用 Hyprland/Omarchy，Panfrost 只有 GLES 3.1，Hyprland 会回退 GLES 3.0，4 GB 内存也偏紧）。操作步骤见 [`../docs/USB_TEST_KIT_7.3.md`](../docs/USB_TEST_KIT_7.3.md)。
+通用镜像默认登录 i3，采用 Catppuccin Mocha 主题。点顶栏网络图标选择 Wi-Fi，按 `Win+D` 打开应用菜单。时区为上海，首选 NTP 服务器为 `ntp.aliyun.com`。详见 [U 盘试跑记录](../docs/USB_TEST_KIT_7.3.md)。
+
+制作同配置的本地根镜像时，把自己设备 `vendor_b` 的 `/etc/firmware/WIFI_RAM_CODE_MT7663.bin` 和 `mt7663_patch_e2_hdr.bin` 一起放入构建环境的 `/inputs/firmware/7.3.5-cloudbook/`，也可用 `MT7663_VENDOR_FIRMWARE_DIR` 指定目录。`scripts/rootfs-postprocess-debian13.sh` 按驱动所需文件名安装这两个文件。省略版本目录与覆盖变量时，脚本使用 `/inputs/firmware/` 中原有的发行版固件。
 
 ## 8. 上游合并后
 
 VDPU346 系列合入主线后，可直接去掉补丁中 1~7 号提交，仅保留板级驱动补丁；届时把基线与上游同步即可。
+
+
+### 7.3.5 #10 的 v30 电源改动
+
+`build_kernel_735.sh` 将上游 v30 的 SC2021 充电器中断唤醒、SBS 电量状态与充电指示灯配置带到 7.3。USB 设备树继承 v30，并将根盘卷标设为 `ROOTFS`。eMMC 版本使用 `EMMC_ROOTFS`。
+
+本次候选产物在 `artifacts/7.3/candidates/build10-v30/`。`boot_linux_73_v30_usb_build10.img` 适用于从 U 盘取根文件系统的配置，启动镜像由 eMMC A 槽加载。两套镜像沿用本机原厂资源模板与已验证的 initramfs。已核对 27 个 RSCE 条目。#10 曾在 ARM64 QEMU 中启动 Xfce，随后用同一内核验证了当前 i3 登录、Rofi 应用菜单和联网校时。上机前的实测基线为 #9，内屏 1920×1200@60、Panfrost、5 GHz 和 UPower 电池均已确认。#10 的充电灯、休眠唤醒和热重启表现仍需板上验证。
+
+这两个 build10 镜像仍使用 `scripts/initramfs-6.12.117/init` 手工 initramfs。重新构建 7.3 根镜像后改由 Debian `initramfs-tools` 生成 `/boot/initrd.img-7.3.5-cloudbook`，`root=LABEL=` 由发行版 initrd 的 local 脚本解析；打包时 `scripts/pack_linux_artifacts.sh` 会从 rootfs tarball 自动取出该文件。
