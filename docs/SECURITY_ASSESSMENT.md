@@ -1,134 +1,171 @@
-# 安全评估：厂商远程管理通道（W6XX / Android 11）
+# 安全评估：本机 Android 11 的厂商控制面
 
-> 分析对象：`W6XX_W52X-RK3568-T-ALLV2.25.20P06` 系统镜像与厂商应用（离线静态分析）
-> 目的：评估"这台设备能否安心使用"，以及风险来自哪里
-> 本文不含可直接复现的攻击构造，只做架构与证据层面的判断
+> **对象**：ZTE `eCloudBook Air 24RTW`（`rk3568_r_w600d2`），Android 11，`slot_b`，系统 `V2.24.30P6-20241112`（vendor APK 的 `versionName` 标 `V2.24.30P5`）
+> **依据**：真机只读检查（`pm`、`dumpsys`、`ss`、`ps`、`getprop`、日志、APK 反编译）
+> **边界**：本文不提供利用工具；没有对设备做任何写入。
 
-## 1. 结论摘要
+## 1. 结论
 
-| 项 | 判断 |
+| 项 | 本机事实 |
 | :--- | :--- |
-| 设计质量 | **不合格**：高权限控制面使用明文 HTTP，下载内容无签名校验 |
-| 最严重问题 | ACS 可下发脚本，设备**无签名校验**地解密并 **以 root 执行** |
-| 谁能利用 | 任何能控制 ACS 响应的一方：同网段/热点中间人、ISP 链路、被攻陷的厂商服务器、恶意系统应用 |
-| 普通互联网攻击者能否直接打 | 不能直接打（需在链路或服务器侧），但设备连公共 Wi-Fi 时风险显著 |
-| 厂商是否有意预留 | 功能上属于"远程运维/售后"设计，但实现方式把风险敞口放大了 |
-| 能否安心使用 | **可以，但必须做网络侧封堵**；否则等于把 root 交给了链路上的任何人 |
+| 构建类型 | `userdebug`，`ro.debuggable=1`，`ro.adb.secure` 为空 |
+| ADB | 标准设置可开；`service.adb.tcp.port=5555`；`service.adb.root=1`；当前对 LAN 提供 **root adb** |
+| 平台权限 | 7 个 ZTE vendor 应用与 `android.uid.system`（uid 1000）共享；平台签名 |
+| 远程管理 | `com.zte.usmartagent` 常驻，TR-069 ACS 为 **HTTPS** `ecloudbook.cmecloud.cn:28897`，本机监听 `0.0.0.0:8000`，带 STUN |
+| 遥测 | `/data/tombstones/evntpost.txt` 实证 **HTTP 明文** POST 到 `218.98.6.253:28001`，含 SN/MAC/机型/触摸统计 |
+| 云管控 | `com.zte.usmartlauncher` 使用 MQTT over TLS（`starrycfn.com:20442`）和设备密钥接口 |
+| root 通道 | `vendor.sys.run.cmd` → `systemcmd`（root）；`vendor.sys.run.syszteupdate`；`sshd`（dropbear 23456，默认关） |
+| 日志 | `syslog.txt`、`wpa_log.txt`、`memlog.txt`、`radio.txt` 本地采集；上传策略未完全证实 |
+| 云桌面 | `com.zte.usmartview`（平台 uid）与 `com.cmss.cloudcomputer`（普通 uid）提供云桌面/远程外设 |
 
-## 2. 证据链：从 ACS 到 root 执行
+**最重要的两个事实**：
 
-### 2.1 明文 ACS
+1. **ADB 是 `userdebug` 的标准行为，不是厂商授权包。** `zted` 只在开机时执行一次 `stop adbd`；之后在设置里打开 USB 调试/无线调试，adbd 会重新启动，`persist.vendor.adbmode.enable=0` 不会再次拦截。
+2. **TR-069 ACS 走 HTTPS，明文的是遥测/部分 OTA 元数据**；两者不是同一条链路，不能混为“ACS 明文”。
+
+## 2. ADB 与访问面
+
+| 属性/设置 | 值 |
+| :--- | :--- |
+| `ro.build.type` | `userdebug` |
+| `ro.debuggable` | `1` |
+| `ro.adb.secure` | 空 |
+| `service.adb.root` | `1` |
+| `service.adb.tcp.port` | `5555` |
+| `persist.adb.tls_server.enable` | `1`（另有 TLS 调试端口 `35045`） |
+| `settings global adb_enabled` | `1` |
+| `settings global development_settings_enabled` | `1` |
+| `persist.vendor.adbmode.enable` | `0` |
+| `runtime.zte.adbmode` | 空 |
+| `init.svc.zted` | `stopped`（one-shot） |
+| `adbDataEnc.zip` | 不存在 |
+
+`/vendor/bin/zted` 在 `sys.boot_completed=1` 时启动一次，读取 `persist.vendor.adbmode.enable`；不等于 `1` 就 `stop adbd`，然后退出。`zted` 是 `oneshot`，不会在之后的标准 adb 开关时再次执行。
+
+**风险**：`ro.adb.secure` 为空 + `service.adb.root=1` + `0.0.0.0:5555`，同一局域网能连 5555 的主机可直接获得 root adb。用完应关闭无线调试或在网关限制来源。
+
+## 3. TR-069 / MDM
+
+`com.zte.usmartagent`：
+
+- `android.uid.system`，`PERSISTENT`。
+- 服务：`com.zte.ui.tr069Service.StartTr069Service`、`MultiAppService`、`BootBroadcastReceiver`。
+- 监听：`0.0.0.0:8000`（ConnectionRequest）。
+- ACS：`https://ecloudbook.cmecloud.cn:28897/vops-autoops-protocol/web/tr069`（HTTPS）。
+- Inform 字段：`SerialNumber`、`FactorySN`、`MACAddress`、`SoftwareVersion`、`Model`、`UserAccount`、`IPAddress`、`ConnectionRequestURL=http://192.168.123.128:8000`。
+- STUN：`stunclient` 向 ACS 侧发 UDP，做 NAT 穿透。
+- 共享 uid 权限包含 `INSTALL_PACKAGES`、`RECOVERY`、`MASTER_CLEAR`、`DEVICE_POWER`、`NETWORK_SETTINGS`、`WRITE_SETTINGS` 等；平台侧具备远程安装/恢复/重启/改网络的能力基础。
+
+**未证实**：本次没有抓到 ACS 下发 root 命令或脚本的日志；`ztecmd.log` 里是本地 `zted`/`zte_set_properties.sh` 触发的命令。能确认的是通道和权限存在，不能把“可能”写成“已发生”。
+
+## 4. 明文遥测
+
+`/data/tombstones/evntpost.txt`（842 B，SHA-256 `c87f7399…`）：
+
+```http
+POST /vops-autoops-http/terminal/cloud/period HTTP/1.1
+Host: 218.98.6.253:28001
+Content-Type: application/json
+
+{"sn":"<redacted>","zteSn":"<redacted>","factorySn":"<redacted>",
+ "mac":"<redacted>","os":"Android","terminalType":21,"vendor":"ZTE",
+ "model":"eCloudBook Air 24RTW","terminalName":"localhost",
+ "clientTime":"2024-11-12T11:47:36Z","eventCode":2,
+ "datas":[{"subEventCode":501,"subSampleStartTime":"...",
+ "subData":[{"move":0,"tap":0,"twoFingerTap":0,
+ "threeFingerMoveRight":0,"rightKey":0,"leftKey":0,
+ "twoFingerZoom":0,"tapTwiceAndDrag":0}]}]}
+```
+
+- **HTTP 明文**，不是 HTTPS。
+- 含设备唯一标识、机型、触摸/手势统计。
+- 日志来源 `[netmanager][ztebw][ccevent.c]`，由 `com.zte.usmartagent` 发出；域名日志写 `ctm.zte.com.cn`，解析到 `218.98.6.253:28001`。
+
+## 5. root 命令与 SSH
+
+`/vendor/bin/systemcmd`：
+
+```sh
+cmd=`getprop vendor.sys.run.cmd`
+$cmd
+setprop vendor.sys.run.cmd ""
+```
+
+`init.zte.rc`：
 
 ```
-persist.sys.mc.ACSAddress = http://218.98.6.253:28002/vops-autoops-protocol/web/tr069
+service systemcmd /vendor/bin/systemcmd
+    class main
+    user root
+    group root graphics system cache
+    seclabel u:object_r:init:s0
+    oneshot
+
+on property:vendor.sys.run.cmd=*
+    start systemcmd
 ```
 
-- 协议：TR-069 / CWMP（SOAP + HTTP）
-- **无 TLS**；`libtr069.so` 虽编译了 OpenSSL 3.3.0，但配置的 URL 是 `http://`
-- CPE 只向 ACS 认证（`ManagementServer.Username/Password`），**不校验服务端身份**
+`/vendor/bin/syszteupdate` 同理，触发属性 `vendor.sys.run.syszteupdate`。
 
-### 2.2 脚本下发与执行（关键）
-
-调用链（`com.zte.usmartagent`，以 `android.uid.system` 运行）：
+`/data/tombstones/ztecmd.log` 记录过：
 
 ```
-libtr069.so
-  → JNI onCallbackUpdateShellUrl(url, cag, type)
-  → GlobalEventManager.post(15, ...)
-  → PreAndPostUpgradeManager.handleShellInstallEvent()
-  → startDownloadPreAndPostShell(url)
-       └─ 下载 <url目录>/preinstall.sh、postinstall.sh
-  → decodeShell()
-  → AgentUtil.runCmd("/data/cache/shell/postinstall.sh")
+am broadcast -a com.zte.usmartsettings --es multidisplay.type "0"
+zte_set_properties.sh
+ip -6 route del default
 ```
 
-关键缺陷：
+`zted` 自己就执行 `setprop vendor.sys.run.cmd zte_set_properties.sh`。也就是说，这条 root 通道是厂商日常机制；任何能写该属性的系统组件/远程管理侧都能以 root 执行命令。
 
-| 环节 | 实现 | 问题 |
+`sshd`：
+
+```
+dropbeard -E -R -F -p 23456
+persist.zte.sshd.enbale=1  -> start sshd
+```
+
+当前 `persist.zte.sshd.enbale=0`，服务 `stopped`；属性一开就是 root shell。
+
+## 6. 云管控与云桌面
+
+| 包 | 通道 | 性质 |
 | :--- | :--- | :--- |
-| 传输 | `HttpURLConnection`，允许 `http://` | 明文，可被中间人替换 |
-| 完整性 | `doDownloadFile()` 只检查 HTTP 200 与大小 ≤10 MB | **无哈希、无签名、无可信源校验** |
-| "加密" | Base64 + AES/GCM，密钥 = `SHA-256(密文自身)`，IV 固定为 `"0123456789ab"` | 密钥由攻击者可控数据派生，**不提供任何真实性** |
-| 内容校验 | `startsWithZte()`：只检查前 3 字节是否 ASCII `ZTE` | 魔法前缀，可任意满足 |
-| 执行 | `chmod 775` 后 `runCmd()`，经 `zte_run_cmd_service` 或 `vendor.sys.run.cmd` | **以 root 执行** |
+| `com.zte.usmartlauncher` | `ssl://mqtt-tls-none.starrycfn.com:20442`；`https://device.starrycfn.com:20442/v1/customer/device/secret/info` | 桌面/激活/设备上报/MQTT 云管控 |
+| `com.zte.usmartagent` | HTTPS ACS + HTTP 遥测 + zlink MQTT | TR-069/MDM/遥测 |
+| `com.zte.usmartview` | `desktop.cucloud.cn`、`uac.zte.com.cn`、`cpd.zte.com.cn:8899`、`sslvpnsf.zte.com.cn`、`zxapp.ztems.com` | SPICE 云桌面、USB/摄像头/麦克风重定向、QoE |
+| `com.cmss.cloudcomputer` | CMCC 云桌面登录/策略 | 普通 uid 10108，云桌面客户端 |
 
-结论：**能控制 ACS 响应的一方，可以让设备以 root 执行任意脚本，且不需要任何密钥或签名。**
+`com.zte.usmartview` 的权限包括相机、麦克风、`READ_LOGS`、`SYSTEM_ALERT_WINDOW`、`WRITE_SECURE_SETTINGS`、定位、蓝牙；共享 uid 使其具备平台能力。`com.cmss.cloudcomputer` 是普通应用，不含平台系统权限。
 
-### 2.3 其他高权限通道
+## 7. 日志
 
-- `vendor.sys.run.cmd` → init 服务 `systemcmd`（root）
-- `vendor.sys.run.syszteupdate` → root 升级器
-- Binder `com.zte.IZteRunCmdService`（`zte_run_cmd_service`）
-- `persist.zte.sshd.enbale=1` → root dropbear，端口 23456
-- `persist.internet_adb_enable=1` / `persist.sys.adb_enable=1` → 直接开 adb（绕过 adbmode）
-- zlink MQTT 方法通道：`/sys/method/<方法>/req`，含 reboot/poweroff/时间/网络/分辨率/unbind 等
-
-### 2.4 数据模型里的控制面
-
-`assets/device_cc.xml` 暴露可写参数：远程重启/关机、设备锁定、强制弹窗、登录模式、自动登录凭据、应用静默安装/卸载、日志采集、远程诊断。
-
-## 3. 威胁模型
-
-| 攻击者位置 | 能力 | 现实性 |
-| :--- | :--- | :--- |
-| 同局域网/恶意热点（ARP/网关劫持） | 改写 ACS 响应 → root 脚本 | **高**，咖啡馆/酒店 Wi-Fi 即成立 |
-| ISP / 链路中间人 | 同上 | 中 |
-| 厂商服务器被攻陷或内部滥用 | 同上（设计如此） | 中 |
-| 恶意系统应用 | 写属性 / 调 Binder 服务 | 需已获得系统权限 |
-| 纯互联网随机扫描 | **不成立**（设备是主动外连，未被监听端口） | — |
-
-## 4. 设计层面的问题清单
-
-1. 高权限控制面使用明文 HTTP（最严重）
-2. 下发脚本无签名、无哈希，所谓 AES 密钥自派生，形同虚设
-3. 远程 shell 执行链以 root 运行，且没有二次确认
-4. 应用静默安装、设备锁定、强制弹窗等能力默认开启
-5. 安全补丁停留在 2021-07-05，内核 4.19.193
-6. root SSH 仅靠一个属性开关（且属性名拼写错误 `enbale`）
-7. 遥测（boot/alarm/event/period）默认开启，用户不可见
-8. 账号激活与云桌面强绑定，本地设备能力被服务端策略控制
-
-## 5. 缓解措施（按有效性排序）
-
-### 5.1 网络侧封堵（最有效，且不改设备）
-
-在路由器/防火墙阻断：
+`init.zte.rc`：
 
 ```
-218.98.6.253                 # ACS / 遥测 / OTA 清单
-ctmcdn.zx.zte.com.cn         # 固件 CDN
-netcheck.ztems.com           # 网络探测
-dori.ours-ai.com             # 联通云
+ztelogcat      -> /data/tombstones/syslog.txt      (15 MB)
+ztelogcat_wpa  -> /data/tombstones/wpa_log.txt     (854 KB)
+MemMonitor     -> /data/tombstones/memlog.txt      (930 KB)
+radiologcat    -> /data/tombstones/radio.txt       (97 KB)
 ```
 
-效果：TR-069、MQTT 引导、遥测、OTA 全部失效；本地功能不受影响。
+`zted` 还会删除蓝牙日志、调试 PCM 等。除 `evntpost.txt` 外，本次没有证实这些日志被上传到哪个服务器。
 
-### 5.2 设备侧（需 root）
+## 8. 风险清单
 
-```bash
-pm disable-user --user 0 com.zte.usmartagent
-pm disable-user --user 0 com.tyzd.mdm.client
-pm disable-user --user 0 com.zte.installer
-pm disable-user --user 0 com.zte.xlinkagent
-setprop persist.cmss.silentupgrade.support 0
-setprop persist.sys.smart.upgrade.defaulturl ""
-setprop persist.zte.sshd.enbale 0
-```
+| 风险 | 说明 |
+| :--- | :--- |
+| **ADB root 对 LAN 开放** | `0.0.0.0:5555`、`ro.adb.secure` 空、`service.adb.root=1`；同网段可直接 root adb |
+| **TR-069/MDM 远控** | agent 常驻、ACS HTTPS、8000 回连、STUN；共享 uid 具备安装/恢复/重启能力 |
+| **明文遥测** | `evntpost` 明文 HTTP 发 SN/MAC/触摸统计；可被同链路观察/篡改（本次未做 MITM） |
+| **root 命令属性** | `vendor.sys.run.cmd`/`vendor.sys.run.syszteupdate` 由 init 以 root 执行 |
+| **root SSH** | `dropbeard` 23456 默认关，属性一开就是 root shell |
+| **本地日志** | syslog/WPA/mem/radio 采集；保留/上传策略未完全证实 |
+| **云桌面外设** | `usmartview`/CloudComputer 可访问相机、麦克风、USB、屏幕 |
+| **明文 OTA 元数据** | `update.json` 走 HTTP；payload 有签名校验，元数据可被干扰 |
 
-（不要停 `zted`，它负责 MAC/序列号/输入法/触屏初始化。）
+## 9. 边界
 
-### 5.3 使用习惯
-
-- 不在不可信 Wi-Fi 下让它连厂商服务端（或先做 5.1）
-- 不把设备接入你无法控制网关的网络后长期待机
-- 定期检查 `/data/tombstones/` 下的日志与异常应用
-
-## 6. 明确的边界
-
-- 本文只做静态风险评估与防御建议，不提供利用工具。
-- **不要使用任何泄露的 CA 私钥伪造证书**：这是滥用全球信任链，且本场景 ACS 是 HTTP，根本用不上。
-- 若发现厂商漏洞，建议通过 CNCERT/CNVD 或厂商安全响应渠道报送，而不是自行利用。
-
-## 7. 待补的最后一块
-
-`libtr069.so` 中 `onCallbackRunCmd` 的直接触发 RPC（SOAP 方法名）尚未定位；但"脚本下发→root 执行"这条链已经完整闭合，严重性判断不依赖它。
+- 本文只做只读评估与防御建议，不提供利用工具。
+- 不移除/不禁用任何包；禁用矩阵见 `THIRD_PARTY_PACKAGE_AUDIT.md`。
+- 不使用泄露的 CA 私钥伪造证书；本机 ACS 是 HTTPS，证书校验行为未做审计，不能用“HTTP 可中间人”套在本机上。
+- 离线 `W6XX_W52X-RK3568-T-ALLV2.25.20P06` 包不是本机镜像；其 URL/包列表不能替本机结论，本机以 `V2.24.30P6`/vendor `P5` 为准。

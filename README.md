@@ -51,6 +51,14 @@
 │   ├── README.md & TESTPLAN.md            # 6.12 构建与验收边界说明
 ├── docs/
 │   ├── board-profile.md                   # 硬件事实源与外设状态矩阵
+│   ├── ANDROID14_PORT_STATUS.md           # Android 14 A 槽状态、产物与刷机 Runbook
+│   ├── LINUX_USB_BOOT_FAILURE_2026-11-21.md # Linux USB 首启黑屏事件：已确认缺陷与未解决问题
+│   ├── SYSTEM_MAP.md                      # 启动链、分区、init/root 通道、应用与通信面
+│   ├── DEVICE_MONITORING_AUDIT.md         # 真机只读审计：ADB、TR-069、遥测与 root 通道
+│   ├── THIRD_PARTY_PACKAGE_AUDIT.md       # 真机第三方/vendor 包矩阵、默认角色与禁用后果
+│   ├── SECURITY_ASSESSMENT.md             # 真机控制面与安全边界（以本机实测为准）
+│   ├── VENDOR_SERVICES_AND_HARDENING.md   # 厂商组件、通信面与加固顺序
+│   ├── OTA_ANALYSIS.md                    # W6XX P06 离线 OTA 包解剖（非本机结论）
 │   ├── progress.md                        # 移植阶段进度记录
 │   ├── REVERSE_ENGINEERING_NOTES.md       # Android 4.19 & U-Boot 逆向核心结论汇总
 │   ├── OTG_RECOVERY.md                    # OTG Rockusb / UMS / UART 热键恢复手册
@@ -72,20 +80,48 @@
 ### 1. 准备源码与闭源前置件（本地，不入库）
 由于版权与体积限制，仓库不包含 Linux 源码与厂商二进制文件（详见 [LICENSES_AND_COPYRIGHT.md](LICENSES_AND_COPYRIGHT.md)）：
 1. 下载上游 **Linux `6.12.117`** 源码解压至 `./linux-6.12/`。
-2. 从你自己的原厂设备只读导出 `boot_b` 中的 `resource.img` 放到 `./artifacts/extracted_resource.img`，并将目标系统的 `initrd.img` 放到 `./artifacts/initramfs-6.12.117-cloudbook-emmc.img`。
+2. 从你自己的原厂设备只读导出 `boot_b` 中的 `resource.img` 放到 `./artifacts/extracted_resource.img`。6.12 还需要手工准备 `initrd.img` 到 `./artifacts/initramfs-6.12.117-cloudbook-emmc.img`；7.3 的 initramfs 由 `scripts/rootfs-postprocess-debian13.sh` 用 Debian `initramfs-tools` 在 rootfs 内生成（`/boot/initrd.img-7.3.5-cloudbook`），打包时自动从 rootfs tarball 取出，不需要这一步。
 3. 如使用 Wi-Fi/蓝牙，请合法获取 MT7663 固件（`mt7663_n9_v3.bin`、`mt7663pr2h.bin`）安装至目标系统的 `/lib/firmware/mediatek/`。
 
-### 2. 编译内核、模块与设备树
+### 2. 编译内核、模块、DTB 与 boot.img
+
+一条命令重建 6.12 与 7.3（需要 `./linux-6.12` 和 `./linux-7.3.5` 两棵源码树）：
+
 ```bash
-# 安装交叉编译/LLVM 工具链 (clang, lld, llvm, dtc, python3) 后执行：
-BUILD_MODULES=1 ./build_kernel_612.sh
+./rebuild_linux.sh
 ```
-脚本会自动同步 `mainline-6.12/rk3568-ecloudbook-air-24rtw*.dts`、按需应用 `mainline-6.12/patches/0001`~`0014`（跳开诊断性 `0002` 与已被 `v23` 替代的 `0004`），并输出 `Image` 与 `rk3568-ecloudbook-air-24rtw.dtb`。
+
+它依次执行 `build_kernel_612.sh`、`build_kernel_735.sh`，再由
+`scripts/pack_linux_artifacts.sh` 生成 v29/v28 两个 `boot_a` 镜像、完整 modules 包、
+`Image`/`System.map`/`config`，并更新 `SHA256SUMS`。
+
+只重建一个版本时：
+
+```bash
+BUILD_MODULES=1 ./build_kernel_612.sh
+scripts/pack_linux_artifacts.sh 6.12
+
+BUILD_MODULES=1 ./build_kernel_735.sh
+scripts/pack_linux_artifacts.sh 7.3
+```
+
+脚本会自动同步 `mainline-6.12/rk3568-ecloudbook-air-24rtw*.dts`、注册默认板型与 USB 试机两个
+DTB、按需应用 `mainline-6.12/patches/0001`~`0014`（跳开诊断性 `0002` 与已被 `v23`
+替代的 `0004`），并输出 `Image` 与两个 DTB。
+
+> rootfs 里的内核模块用 `scripts/rootfs-postprocess-debian13.sh` 重新生成，把
+> `MODULES_TARBALL` 指向刚生成的 `artifacts[/7.3]/modules-<kver>.tar.gz`；不要手工
+> 改 rootfs 镜像里的模块。
 
 ### 3. 打包 `boot_a` 镜像
+
+`rebuild_linux.sh` 已经调用 `scripts/pack_linux_artifacts.sh` 完成打包；单独重打
+6.12 的 v29 镜像仍可使用：
+
 ```bash
 ./build_boot_linux_612.sh
 ```
+
 生成 `<= 160 MiB` 的 Rockchip Android Boot Image v2 镜像，校验 DTB 内 `__symbols__`、`chosen` 与 `reboot_mode`。
 
 ### 4. 部署桌面与多媒体调优要点
@@ -102,4 +138,4 @@ BUILD_MODULES=1 ./build_kernel_612.sh
 
 详见 [docs/OTG_RECOVERY.md](docs/OTG_RECOVERY.md)：
 * 试启动 `misc` 配置为 `tries_remaining=3` 时，连续冷重启失败会自动回退 `Slot B` 原厂 Android；
-* 随时可通过串口 `Ctrl+B` 或 `reboot loader` / `reboot ums` 经 Type-C 旁的 USB-A 口连接主机 `rkdeveloptool` 恢复。
+* 随时可通过串口 `Ctrl+C` 或 `reboot loader` / `reboot ums` 经 Type-C 旁的 USB-A 口连接主机 `rkdeveloptool` 恢复。

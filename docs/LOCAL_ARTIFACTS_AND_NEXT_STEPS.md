@@ -17,7 +17,7 @@
 | `config-6.12.117-cloudbook` | 与真机验证配置一致的 `.config` |
 | `System.map-6.12.117-cloudbook` / `vmlinux-6.12.117-cloudbook` | 调试符号（可 addr2line） |
 | `initramfs-6.12.117-cloudbook-emmc.img` | 自制最小 initramfs（gzip，994 KB），按卷标自动找根分区 |
-| `rootfs-debian13-trixie-arm64-cloudbook.tar.zst` | Debian 13 (trixie) arm64 最小用户态（含模块/固件/板级配置） |
+| `rootfs-debian13-trixie-arm64-cloudbook.tar.zst` | Debian 13 (trixie) arm64 最小用户态（含模块/固件/板级配置及 RK809 UCM2） |
 | `firmware/mt7663_n9_v3.bin`、`mt7663pr2h.bin` | MT7663S Wi-Fi/BT 固件 |
 | `boot-test-qemu-6.12.117-cloudbook.log` | QEMU 全链路启动证据 |
 
@@ -40,17 +40,15 @@
 - MT7663S Wi-Fi/蓝牙实际连接与吞吐、PD 充电、盒盖休眠、键盘触控板、Hantro 硬解。
 - 实际 SDIO 吞吐（作者反馈 5G 约 300 Mbps，接近 SDIO 链路上限）。
 
-## 4. `resource.img` 已从 OTA 提取（不再需要真机）
+## 4. 从本机 `boot_b` 提取 `resource.img`
 
-`artifacts/extracted_resource.img` 来自 OTA 包 `payload.bin` 的 `boot` 分区第二段（RSCE，16,672,256 字节），**无需再从设备 `boot_b` 导出**。
+当前 `artifacts/extracted_resource.img` 取自 11 月 21 日留存的本机 `factory_backup/boot_b.img`。按 Android boot v2 头提取的 RSCE 长 15,006,720 字节，SHA-256 为 `32d5427363e892e65e7732006afa8b1b8fb3e706cc9a1b21152e171d2d918aa4`。复现命令如下。
 
-该 resource 表包含 25 个板型 DTB，本机对应的是：
-
-```
-entry[25] rk3568-w620d-25wh_v12#_saradc_ch1=938#_saradc_ch4=680.dtb
+```bash
+python3 scripts/extract_resource_from_boot.py factory_backup/boot_b.img -o artifacts/extracted_resource.img
 ```
 
-`pack_boot_linux.py` 现已按名称自动定位板型条目（`find_board_entry()`），不再写死 entry 17（那份表里 17 是 w600e5g，会导致 U-Boot 按 ADC 选到错误的 DTB）。
+本机表有 27 个资源条目，从零计数的第 17 项是 `rk3568-w620d-25wh_v12#_saradc_ch1=938#_saradc_ch4=680.dtb`。早期 6.12 试跑镜像用了 P06 OTA 的 16,672,256 字节模板，该表有 36 项，同名板型在第 25 项。打包时第 0 项和按板名找到的条目都会换成同一份主线 DTB。11 月 21 日重打的 7.3.5 镜像使用本机表。
 
 ## 5. 引导镜像已生成并校验
 
@@ -59,7 +57,7 @@ entry[25] rk3568-w620d-25wh_v12#_saradc_ch1=938#_saradc_ch4=680.dtb
 | `artifacts/boot_linux_612_v29_emmc.img` | eMMC 启动（`root=LABEL=EMMC_ROOTFS`） | 39.28 MB |
 | `artifacts/boot_linux_612_v28_usb.img` | U 盘首测（`root=LABEL=ROOTFS`） | 39.28 MB |
 
-已验证镜像内 resource 的 entry 0 与 entry 25 均写入本机 DTB，大小与 SHA-1 完全匹配：
+下列记录来自早期 OTA 模板的 6.12 eMMC 镜像。其两个主线 DTB 条目的大小和 SHA-1 分别为：
 
 ```
 entry[0]  size=133012 sha1=2a7708f2...
@@ -128,22 +126,23 @@ sudo dd if=/path/to/boot_linux_612_v29_emmc.img of=/dev/mmcblk0p11 bs=4M conv=fs
 
 | 内容 | 位置 |
 | :--- | :--- |
-| initramfs 的 `/init` 脚本 | `scripts/initramfs-6.12.117/init` |
+| 7.3 initramfs | `scripts/rootfs-postprocess-debian13.sh` 在 rootfs 内安装 Debian `initramfs-tools`，生成 `/boot/initrd.img-7.3.5-cloudbook`；`root=LABEL=` 由它的 local 脚本解析 |
+| 6.12 initramfs（遗留） | `scripts/initramfs-6.12.117/init`（手工 busybox，仅 6.12 分支引用） |
 | rootfs 后处理脚本 | `scripts/rootfs-postprocess-debian13.sh` |
 | 补丁重基说明 | `mainline-6.12/README.md` 的“补丁基线与 6.12.117 重基”一节 |
 
 复现命令（与本次构建一致）：
 
 ```bash
-# initramfs
-debootstrap 容器内：cp /bin/busybox、init 脚本后
-cd initramfs && find . | cpio -o -H newc | gzip -9 > initramfs.img
-
 # rootfs
 debootstrap --arch=arm64 --variant=minbase \
   --include=systemd,systemd-sysv,dbus,sudo,openssh-server,network-manager,\
-wpasupplicant,iw,rfkill,bluez,kmod,e2fsprogs,usbutils,pciutils,\
+wpasupplicant,iw,wireless-regdb,polkitd,rfkill,bluez,kmod,e2fsprogs,usbutils,pciutils,\
 ca-certificates,curl,less,vim-tiny,htop,locales \
   trixie /rootfs http://deb.debian.org/debian
-# 再执行 scripts/rootfs-postprocess-debian13.sh
+
+# 后处理会安装 initramfs-tools 并在 rootfs 内生成 /boot/initrd.img-7.3.5-cloudbook；
+# 打包时 scripts/pack_linux_artifacts.sh 会从 rootfs tarball 自动取出它
+KVER=7.3.5-cloudbook MODULES_TARBALL=/inputs/modules-7.3.5-cloudbook.tar.gz \
+  scripts/rootfs-postprocess-debian13.sh
 ```

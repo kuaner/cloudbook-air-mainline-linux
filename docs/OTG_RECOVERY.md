@@ -69,11 +69,12 @@ sha256sum -c factory_backup/MANIFEST.sha256
 1. 用双公头 USB-A 线连接主机与笔记本 **Type-C 旁边的 USB-A 口**。
 2. 任选一种方式进入 Loader 模式：
    - **OS 内重启进入**：在 Linux 或 Android root 下执行 `reboot loader`（Android 下 `adb shell reboot loader`）；
-   - **串口热键中断**：接通 UART 控制台后上电/重启时连按 `Ctrl+B` 进入 U-Boot CLI，执行：
+   - **串口热键中断**：接通 UART 控制台后上电/重启时连按 `Ctrl+C` 进入 U-Boot CLI，执行：
      ```text
      rockusb 0 mmc 0
      ```
      （也可执行 `ums 0 mmc 0` 将整块 eMMC 映射为主机块设备，效果同 `reboot ums`。）
+   - **无 UART 按键入口**：U-Boot DTB 的 `adc-keys/volumeup-key` 标了 `label = "recovery"`。按住机身 **Volume Up**（或 Fn+Volume Up）再按电源，观察主机 `rkdeveloptool ld` 是否出现 `Loader`/`Maskrom`，或 `adb devices` 是否出现 recovery/sideload。
 3. 主机确认识别（`rkdeveloptool ver 1.32`）：
    ```bash
    rkdeveloptool ld

@@ -15,7 +15,7 @@
    * 实测原厂 SPL 会把 `misc` (`0x800`) 中 `tries_remaining` 减 1（`3 -> 2`），随后 U-Boot `ab_select_slot` 再减 1（`2 -> 1`）。切回/试引导 Slot A 时需保留 `Slot B (priority=14, successful=1)` 作为自动回退保底。
 4. **物理 OTG / Rockusb / UMS 接口与串口热键**
    * 本机**无 TF 卡槽**；唯一工作在 `dr_mode = "otg"` 的 `dwc3@fcc00000` 物理连接到 **Type-C 口旁边的 USB-A 母座**（需双公头 USB-A 线）。
-   * 主板 UART2 测试焊盘波特率为 `115200 8N1`（内核阶段 `console=ttyS2,115200n8`）。上电瞬间 U-Boot 串口支持 `Ctrl+B` 进入 BootROM Download 模式，Linux/Android 支持 `reboot loader` 与 `reboot ums`。
+   * 主板 UART2 测试焊盘波特率为 `115200 8N1`（内核阶段 `console=ttyS2,115200n8`）。上电瞬间 U-Boot 串口支持 `Ctrl+C`（字符串 `Hit key to stop autoboot('CTRL+C')`，`bootdelay=0`）进入 U-Boot CLI，再执行 `rockusb 0 mmc 0`；另有 ADC `volumeup-key`（`label="recovery"`）可无 UART 进 recovery/download。Linux/Android 支持 `reboot loader` 与 `reboot ums`。
 
 ---
 

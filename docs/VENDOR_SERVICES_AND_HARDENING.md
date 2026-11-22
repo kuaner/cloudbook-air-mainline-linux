@@ -1,111 +1,130 @@
-# 厂商管控组件盘点与本地加固方案
+# 厂商组件盘点与本地加固
 
-> 来源：`W6XX_W52X-RK3568-T-ALLV2.25.20P06` 离线包（system / vendor / product / system_ext 全量镜像）
-> 目标：保留 Android 本地可用性，同时了解并可选地关闭厂商远程管理与遥测。
+> **对象**：本机 `eCloudBook Air 24RTW`（`rk3568_r_w600d2`），Android 11，`slot_b`
+> **依据**：真机 `pm`/`dumpsys`/APK/日志，只读检查  
+> **约束**：本文是清单与建议；没有执行任何 `pm disable`、`setprop`、`dd`。
 
-## 1. 组件盘点
+## 1. 组件盘点（本机实际安装）
 
-| 包名 | 位置 | 特权 | 能力 |
+| 包 | 位置 | uid/签名 | 角色 |
 | :--- | :--- | :--- | :--- |
-| `com.zte.usmartagent` | `/vendor/app/uSmartAgent_*` | `android.uid.system`、`RECOVERY`、`READ_PRIVILEGED_PHONE_STATE` | **TR-069 客户端**（`libtr069.so`、`libacsdiscover.so`）、**MQTT 远程接入**（`libzlink*`、`libmosquitto`）、自动下载（`libAutoDownload.so`）、USB/HID 控制（`libhidec`、`libspca*`） |
-| `com.tyzd.mdm.client` | `/system/app/tyzd_mdm_client` | `QUERY_ALL_PACKAGES`、`REQUEST_INSTALL_PACKAGES`、`DEVICE_POWER`、`DUMP`、`SYSTEM_ALERT_WINDOW` | MDM 客户端；内嵌 `net.memenet.tyycenter.ControlService`，监听开机/网络变化 |
-| `com.zte.installer` | `/vendor/app/usmartinstaller_*` | `android.uid.system`、`REQUEST_INSTALL_PACKAGES` | 静默安装/卸载应用（可被远程下发） |
-| `com.zte.xlinkagent` | `/vendor/app/xlinkAgent_*` | `android.uid.system`、`RECOVERY` | 远程协助/控制代理 |
-| `com.zte.usmartview` | `/vendor/app/uSmartView_*` | 相机/麦克风/悬浮窗 | 云桌面客户端（把画面与输入送到云端，属产品功能） |
-| `ctyundesk` | `/vendor/app/ctyundesk` | — | 天翼云桌面组件 |
-| `com.zte.usmartlauncher` | `/vendor/app/uSmartLauncher_*` | `WRITE_SECURE_SETTINGS`、`PACKAGE_USAGE_STATS`、`REQUEST_DELETE_PACKAGES` | 定制桌面/看板，可作为管控入口 |
-| `com.zte.usmartsettings` | `/vendor/app/uSmartSettings_*` | `WRITE_SECURE_SETTINGS`、`CHANGE_WIFI_STATE`、`MOUNT_UNMOUNT_FILESYSTEMS` | 定制设置，内含 ADB 授权校验（见 `OTA_ANALYSIS.md` 第 9 节） |
-| `usmarttool` | `/vendor/app/usmarttool_*` | — | 诊断工具 |
+| `com.zte.usmartagent` | `/vendor/app/uSmartAgent_*` | 1000 / 平台 | TR-069/MDM、遥测、远程诊断 |
+| `com.zte.usmartlauncher` | `/vendor/app/uSmartLauncher_*` | 1000 / 平台 | HOME/LAUNCHER、激活、MQTT 云管控、运营商上报 |
+| `com.zte.usmartsettings` | `/vendor/app/uSmartSettings_*` | 1000 / 平台 | 默认 Settings、激活、重启/关机、Wi-Fi |
+| `com.zte.usmartupdate` | `/vendor/app/uSmartUpdate_*` | 1000 / 平台 | 厂商 OTA、激活服务、摄像头/EC 固件升级 |
+| `com.zte.usmartview` | `/vendor/app/uSmartView_*` | 1000 / 平台 | SPICE 云桌面、USB/摄像头/麦克风重定向 |
+| `com.zte.usmarttool` | `/vendor/app/usmarttool_*` | 1000 / 平台 | 诊断工具 |
+| `com.zte.installer` | `/vendor/app/usmartinstaller_*` | 1000 / 平台 | 厂商静默安装 |
+| `com.cmss.cloudcomputer` | `/data/app/...` | 10108 / 中国移动云 | 云桌面登录/客户端 |
+| `com.google.android.inputmethod.pinyin` | `/system/priv-app/ggsrf` | 10070 / 平台重签 | 默认中文输入法，Google 账号/联系人同步 |
+| `com.DeviceTest` | `/system/priv-app/DeviceTest` | 1000 / 平台 | 工厂硬件测试 |
+| `com.cghs.stresstest` | `/system/priv-app/StressTest` | 1000 / 平台 | 压力测试 |
+| `com.android.rk` | `/system/app/RkExplorer` | 1000 / 平台 | 文件管理器 |
+| `org.chromium.webview_shell` | `/product/app/Browser2` | 10093 / AOSP 测试 | WebView 测试壳 |
 
-## 2. 通信面
+**本机没有** `com.tyzd.mdm.client`、`com.zte.xlinkagent`、`ctyundesk`；这些名字不出现在 `pm list packages` 中。`com.sohu.inputmethod.sogou.zte` 只在 `enabled_input_methods` 残留，`pm path` 为空，不是已安装包。
 
-| 用途 | 地址 / 机制 |
+## 2. 默认角色
+
+- **HOME**：`com.android.provision`（当前 setup）、`com.zte.usmartlauncher`、`com.cmss.cloudcomputer`（`LoginActivity`）、`com.android.settings.FallbackHome`。
+- **SETTINGS**：只有 `com.zte.usmartsettings/SettingRouterActivity`；AOSP Settings 只有 `FallbackHome`，不是完整设置。
+- **IME**：默认 Google 拼音；LatinIME 可用；Sogou 残留未安装。
+- **安装器**：`pm get-install-location=auto`；AOSP `com.android.packageinstaller` 与 `com.zte.installer` 都在，未解析出唯一默认 APK 打开器。
+
+## 3. 通信面（本机实测）
+
+| 用途 | 地址/机制 |
 | :--- | :--- |
-| TR-069 ACS（远程参数读写、升级、诊断） | `persist.sys.mc.ACSAddress` → `http://218.98.6.253:28002/vops-autoops-protocol/web/tr069` |
-| MQTT 远程接入 | `libzlink_access` 先 `GET /device/getMqttServer?deviceId=<SN>`，再连 MQTT broker 并订阅主题 |
-| 遥测上报 | `/vops-autoops-http/terminal/cloud/{boot,alarm,event,period}`（由 `uSmartAgent` 发出） |
-| 智能升级 | `persist.sys.smart.upgrade.defaulturl` → `.../download/images/<渠道>/update.json`，静默升级开关 `persist.cmss.silentupgrade.support=1` |
+| TR-069 ACS | `https://ecloudbook.cmecloud.cn:28897/vops-autoops-protocol/web/tr069`（HTTPS） |
+| TR-069 回连 | `0.0.0.0:8000`，`ConnectionRequestURL=http://192.168.123.128:8000` |
+| STUN | `stunclient` 向 ACS 侧发 UDP |
+| 明文遥测 | `http://218.98.6.253:28001/vops-autoops-http/terminal/cloud/period`（`evntpost.txt` 实证） |
+| 桌面 MQTT | `ssl://mqtt-tls-none.starrycfn.com:20442` |
+| 设备密钥 | `https://device.starrycfn.com:20442/v1/customer/device/secret/info` |
+| 智能升级 | `persist.sys.smart.upgrade.defaulturl` → `http://36.133.134.241:28002/.../update.json` |
+| 云桌面 | `desktop.cucloud.cn`、`uac.zte.com.cn`、`cpd.zte.com.cn:8899`、`sslvpnsf.zte.com.cn`、`zxapp.ztems.com` |
 | 网络探测 | `http://netcheck.ztems.com/generate_204_cloud` |
-| 联通云桌面 | `https://dori.ours-ai.com` |
-| 固件 CDN | `http://ctmcdn.zx.zte.com.cn/vops-autoops-cpe/download/images/` |
+| 时间 | `time.zte.com.cn`、Aliyun/NTSC NTP |
+| 系统 | `server_ip=cloud.zte.com.cn`、`runtime.smt.mc.stunaddr=ecloudbook.cmecloud.cn` |
 
-## 3. 可能采集的数据（按权限与端点推断）
+> 这些是本机配置/日志/APK 字符串中的实际值；离线 `W6XX_W52X-RK3568-T-ALLV2.25.20P06` 是另一份镜像，其 `218.98.6.253:28002` ACS 不能套到本机。
 
-- 设备身份：序列号（`ro.serialno` / `persist.sys.stbid`）、`ro.product.productid`、MAC
-- 运行状态：电量、充电、网络、开机/告警事件（遥测端点 `boot/alarm/event/period`）
-- 应用清单：`QUERY_ALL_PACKAGES`（MDM）
-- 云桌面会话：屏幕、键鼠、摄像头/麦克风（`usmartview`，属产品功能）
+## 4. 可能采集的数据
 
-## 4. 加固方案（按投入从低到高）
+- 设备身份：SN、factorySN、MAC、`ro.product.productid`、机型。
+- 运行状态：电量/充电/网络/开机/告警/周期事件。
+- 触摸/手势统计：`evntpost` 的 `subEventCode=501`。
+- 应用与云桌面：静默安装能力；云桌面可访问屏幕、键鼠、摄像头、麦克风、USB。
+- 日志：syslog/WPA/mem/radio 本地采集。
 
-### 4.1 无 root（仅 adb/设置）
+## 5. 禁用矩阵
 
-```bash
-# 尝试冻结（系统应用可能因 uid system 被拒）
-adb shell pm disable-user --user 0 com.tyzd.mdm.client
-adb shell pm disable-user --user 0 com.zte.installer
-adb shell pm disable-user --user 0 com.zte.xlinkagent
-adb shell pm disable-user --user 0 com.zte.usmartagent
+### 5.1 可禁用（不影响默认 UI/激活）
+
+```text
+com.zte.usmarttool
+com.zte.usmartview        # 不用云桌面
+com.DeviceTest
+com.cghs.stresstest
+com.android.rk
+org.chromium.webview_shell
 ```
 
-失败时只能依赖路由器侧屏蔽（见 4.3）。
+### 5.2 条件禁用
 
-### 4.2 有 root（Magisk / userdebug）
-
-```bash
-# 冻结（比卸载可逆）
-pm disable-user --user 0 com.tyzd.mdm.client
-pm disable-user --user 0 com.zte.usmartagent
-pm disable-user --user 0 com.zte.installer
-pm disable-user --user 0 com.zte.xlinkagent
-
-# 关闭静默升级与升级清单
-setprop persist.cmss.silentupgrade.support 0
-setprop persist.sys.smart.upgrade.defaulturl ""
-
-# 关闭 ADB 自动授权开关（避免被远程开启）
-setprop persist.sys.autotest.openadb 0
-```
-
-```bash
-# 屏蔽厂商服务端（IP 层）
-iptables -I OUTPUT -d 218.98.6.253 -j REJECT
-
-# 域名层（/system/etc/hosts 或 Magisk 模块）
-echo "0.0.0.0 ctmcdn.zx.zte.com.cn" >> /etc/hosts
-echo "0.0.0.0 netcheck.ztems.com"    >> /etc/hosts
-echo "0.0.0.0 dori.ours-ai.com"      >> /etc/hosts
-```
-
-### 4.3 网络侧（不改设备）
-
-在路由器/网关直接封掉 `218.98.6.253`、`ctmcdn.zx.zte.com.cn`、`netcheck.ztems.com`。这样 TR-069、MQTT 引导、遥测与 OTA 全部失效，且不影响本地功能。
-
-### 4.4 彻底移除（风险最高）
-
-`/vendor` 与 `/system` 为只读分区，需 `remount` 后删除 APK 并清理对应 `/data` 目录。会破坏后续 OTA 增量包与厂商签名一致性，不建议在保留 Android 的前提下使用。
-
-## 5. 逐项影响
-
-| 关闭对象 | 失去的功能 | 本地影响 |
+| 包 | 前提 | 失去的功能 |
 | :--- | :--- | :--- |
-| `com.zte.usmartagent` | TR-069、MQTT 远程、遥测、自动下载 | 本地 Wi-Fi/显示/输入不受影响 |
-| `com.tyzd.mdm.client` | 远程管控、策略下发 | 可能影响激活/云桌面开通流程 |
-| `com.zte.installer` | 静默安装 | 手动装包不受影响 |
-| `com.zte.xlinkagent` | 远程协助 | 无 |
-| `com.zte.usmartview` | 云桌面 | 若只用本地 Android 可停 |
-| `zted`（系统服务） | 写入 MAC/序列号、设置输入法、触屏 HID 初始化 | **不要停** |
+| `com.cmss.cloudcomputer` | 不用中国移动云桌面 | 云桌面登录/客户端 |
+| `com.zte.usmartupdate` | 激活完成、不用厂商 OTA/外设固件 | 厂商 OTA、激活服务、摄像头/EC 升级 |
+| `com.zte.installer` | 不需要厂商静默安装 | 静默安装/更新；AOSP 安装器仍在 |
+| `com.google.android.inputmethod.pinyin` | 已设 LatinIME/其它输入法 | 默认中文输入法、Google 账号/联系人同步 |
+| `com.zte.usmartagent` | 激活完成、不要远程管理/售后诊断 | TR-069、遥测、远程支持；`PERSISTENT` 可能被重新拉起 |
 
-## 6. 验证
+### 5.3 不可先禁用
+
+| 包 | 原因 |
+| :--- | :--- |
+| `com.zte.usmartsettings` | 唯一 Settings + 激活 + 重启/关机入口 |
+| `com.zte.usmartlauncher` | HOME/LAUNCHER + 激活；无 AOSP Launcher3；需先装替代 Launcher |
+| `com.android.provision` | 当前 setup HOME；setup 完成前禁用会中断初始化 |
+| AOSP core（SystemUI/Bluetooth/phone/providers/webview/networkstack 等） | 系统运行必需 |
+
+### 5.4 正确的加固顺序
+
+1. **网络侧先封**（OpenWrt DNS/firewall），不动机器；确认不影响自己要用的功能。
+2. 禁用 5.1 的 6 个包。
+3. 不用云桌面：`com.cmss.cloudcomputer`、`com.zte.usmartview`。
+4. 不用厂商 OTA/静默安装：`com.zte.usmartupdate`、`com.zte.installer`。
+5. 激活完成、不要远程支持：`com.zte.usmartagent`；观察是否被重新拉起。
+6. 安装替代 Launcher/Settings/输入法后，才考虑 `usmartlauncher`/`usmartsettings`/Google 拼音。
+7. **不要先动 `usmartsettings`/`usmartlauncher`**；否则可能失去设置/桌面/激活。
+
+## 6. root/init 通道
+
+| 通道 | 机制 | 当前状态 |
+| :--- | :--- | :--- |
+| `systemcmd` | `vendor.sys.run.cmd` → root 执行 | 属性空，服务 stopped |
+| `syszteupdate` | `vendor.sys.run.syszteupdate` → root 执行 | 属性空，服务 stopped |
+| `sshd` | `dropbeard -p 23456`，`persist.zte.sshd.enbale=1` | 0/stopped |
+| `zted` | boot 时 one-shot；adbmode 非 1 则 `stop adbd` | stopped |
+| `ztelogcat`/`MemMonitor` | 本地日志 | 运行中 |
+| `update_engine` | A/B OTA | 运行中 |
+
+不要停 `zted`：它负责 MAC/序列号/输入法/触屏初始化；但它的 adb 拦截只在开机执行一次。
+
+## 7. 验证（只读）
 
 ```bash
-ps -A | grep -E "usmart|tyzd|xlink|installer"
-ss -tupn | grep -E "218\.98|:28002"
-cat /data/tombstones/{zte,set_properties,update_ota}.log
+adb shell pm list packages | grep -E 'com\.zte|cmss|DeviceTest|stresstest|android\.rk|pinyin'
+adb shell cmd package query-activities -a android.intent.action.MAIN -c android.intent.category.HOME
+adb shell cmd package resolve-activity -a android.settings.SETTINGS
+adb shell dumpsys package com.zte.usmartagent | grep -E 'versionName|userId|sharedUser'
+adb shell ss -tupn
+adb shell getprop | grep -E 'adbmode|adb|sshd|smart.upgrade|ACS'
 ```
 
-## 7. 风险与合规提示
+## 8. 风险与合规
 
-- 这台设备是“移动云电脑”形态，账号激活与云桌面服务是运营商产品的一部分；关闭 MDM/激活可能违反服务条款或影响保修。
-- 关闭 OTA 后安全补丁不再更新（系统当前本就停在 2021-07-05）。
-- `vbmeta` 已禁用 AVB（`flags=2`），修改 vendor/system 不会触发校验失败，但会破坏 A/B OTA 的增量基线。
+- 设备是“移动云电脑”形态，账号激活/云桌面是运营商产品的一部分；禁用 MDM/激活可能影响服务条款/保修。
+- 关闭厂商 OTA 后安全补丁不再更新（本机补丁本就停在 2021-07-05）。
+- 保留 Android 本地可用性的最低集是：`usmartsettings`、`usmartlauncher`、AOSP core；`usmartupdate`/`usmartinstaller` 视是否用厂商 OTA 决定；`usmartagent` 是隐私与远程支持之间的取舍。

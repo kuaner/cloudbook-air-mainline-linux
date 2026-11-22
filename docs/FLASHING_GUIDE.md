@@ -3,6 +3,8 @@
 > **适用机型**：中国移动 / 中兴云电脑笔记本 `CT2000-24RTW`（主板丝印 `W620D V12.0`，SoC `RK3568B2`，4GB RAM + 32GB eMMC，无 TF 卡槽）  
 > **目标系统**：主线 Linux `6.12.117-cloudbook` + Armbian Debian 13 (Trixie) ARM64  
 > **安全机制**：保留原厂签名 `idbloader` / `uboot` / `trust` 与 `Slot B` 原厂 Android 11；Linux 仅部署在 `Slot A (boot_a)`。支持 **先 U 盘零损试跑，再可选迁入内置 eMMC**，并保留随时一键还原 Android 的能力。
+>
+> **本机进展（2026-11-21）**　真机日志确认 A 槽已从 U 盘进入 Debian，黑屏时内屏控制器一直在等待面板。换用补丁 `0014` 的 6.12 镜像后，用户已看到文字登录界面。7.3.5 的 USB 根文件系统提供 LightDM 和 i3 桌面。[故障记录](LINUX_USB_BOOT_FAILURE_2026-11-21.md) · [7.3.5 桌面试跑包](USB_TEST_KIT_7.3.md)
 
 ---
 
@@ -23,7 +25,7 @@
 
 ### 1.1 必备硬件
 * 一台同款 **ZTE CloudBook Air 14" (`CT2000-24RTW`)**。
-* 一根 **USB 3.0 U 盘**（建议 >= 16GB，用于阶段一免破坏试启动）。
+* 一根 **USB 3.0 U 盘**（建议 >= 16GB，用于阶段一免破坏试启动；插 host USB-A 口，不要插 Type-C 旁边的 OTG 口）。
 * 一台 **x86_64 Linux 主机**（Ubuntu / Debian 均可，用于制作 U 盘、打包镜像、可选编译内核）。
 * 至少以下通信方式之一：
   * **双公头 USB-A 对 USB-A 数据线**（插入笔记本 **Type-C 口旁边的那个 USB-A 母座**，这是本机唯一接通 `dwc3@fcc00000` OTG 控制器的端口，用于 `adb` 或 `rkdeveloptool` 刷机）。
@@ -97,11 +99,12 @@ python3 scripts/extract_resource_from_boot.py factory_backup/boot_b.img -o artif
 cd artifacts && sha256sum -c SHA256SUMS && cd ..
 ```
 其中核心产出物说明：
-* `Image-6.12.117-cloudbook`：已合入全部 10 项功能补丁的 ARM64 内核
-* `rk3568-ecloudbook-air-24rtw-v29.dtb`：eMMC 版设备树（注意阶段一若先从 U 盘启动，建议用脚本按 `v28` 重打一份 U 盘版 DTB，或把 U 盘卷标临时设为 `EMMC_ROOTFS` 也可直接测试）
-* `modules-6.12.117-cloudbook-v26.tar.gz` + `mt7663s.ko`：内核模块与最新版 Wi-Fi 模块
+* `Image-6.12.117-cloudbook`：已合入当前板级/驱动补丁序列的 ARM64 内核
+* `rk3568-ecloudbook-air-24rtw-v29.dtb`：eMMC 版设备树；U 盘首测用 `v28-usb2-pm-fix.dtb`
+* `modules-6.12.117-cloudbook.tar.gz`：完整模块树（含 0013 的 `mt7663s`）
 * `firmware/mt7663_n9_v3.bin` & `firmware/mt7663pr2h.bin`：MT7663S 无线/蓝牙固件
-* `initramfs-6.12.117-cloudbook-emmc.img`：通用 Debian/Armbian initramfs
+* `initramfs-6.12.117-cloudbook-emmc.img`：Debian/Armbian initramfs（eMMC 与 U 盘共用）
+* `boot_linux_612_v28_usb.img` / `boot_linux_612_v29_emmc.img`：已打好的 U 盘/eMMC 引导镜像
 
 ---
 
@@ -150,7 +153,41 @@ Linux `6.12` 主线 `mt7663s` 驱动加载以下两个固件文件：
 
 ## 4. 阶段一：制作 USB 3.0 启动 U 盘（推荐首测，不改原厂数据）
 
-### 4.1 下载并写入 Armbian Debian 13 (Trixie) 基础镜像
+### 4.0 最快路线：直接写预构建 USB 镜像
+
+`artifacts/rootfs-debian13-usb.ext4` 是整盘 ext4 的 Debian 13 根文件系统，卷标为 `ROOTFS`，包含 6.12.117 模块、MT7663 固件和 `cloudbook` 账户。U-Boot 从 eMMC 的 A 槽加载 Linux，initramfs 再挂载 U 盘上的 `/dev/sda`。这份镜像的本地登录界面是文本控制台。
+
+```bash
+# Linux 主机：先核对 U 盘盘符，别写错主机硬盘
+lsblk -dpo NAME,SIZE,MODEL
+sudo umount /dev/sdX* 2>/dev/null || true
+sudo dd if=artifacts/rootfs-debian13-usb.ext4 of=/dev/sdX bs=4M status=progress conv=fsync
+sync
+
+# macOS 主机：diskutil list 找到 external physical disk，卸载后写 rdisk
+diskutil list
+diskutil unmountDisk /dev/diskN
+sudo dd if=artifacts/rootfs-debian13-usb.ext4 of=/dev/rdiskN bs=4m
+sync
+```
+
+写完后 U 盘整盘卷标应为 `ROOTFS`：
+
+```bash
+sudo e2label /dev/sdX        # 应输出 ROOTFS
+```
+
+> 默认账户：`cloudbook` / `cloudbook`，`root` / `cloudbook`。首启后第一件事就是改密码。
+>
+> **整盘 ext4 的 initramfs 兼容性**：旧 initramfs 只扫描 `/dev/sd*[0-9]`（分区），而本镜像无分区表、只有 `/dev/sda`，会找不到 root 并掉进 rescue shell。当前 `artifacts/initramfs-6.12.117-cloudbook-emmc.img` 已改为同时扫描 `/dev/sd*`，`boot_linux_612_v28_usb.img` 也已用该 initramfs 重打。旧镜像不要再用于整盘 U 盘。
+>
+> **插口**：U 盘必须插 host USB-A 口；Type-C 旁边的 USB-A 是 `dwc3@fcc00000` OTG，Android 下是 device 模式（adb/rkdeveloptool），U 盘不会枚举成 `sda`。
+>
+> 镜像 `/root/` 已放入 `misc_commit_slot_a.img`、`misc_restore_slot_b.img` 和 `boot_linux_612_v29_emmc.img`，首启后可直接切换永久槽或做 eMMC 迁移。
+>
+> 4.1~4.5 是手工 Armbian 路线；用 4.0 的预构建镜像可以直接跳到第 5 节。
+
+### 4.1 手工路线：下载并写入 Armbian Debian 13 (Trixie) 基础镜像
 在主机下载任意 RK3568 / `rock-3a` 的 Armbian Trixie 镜像（例如 `Armbian_26.8.1_Rock-3a_trixie_current_6.18.44_minimal.img.xz`），插上你的 U 盘（假设识别为 `/dev/sdX`，**请务必先用 `lsblk` 核对盘符，千万别写错主机硬盘！**）：
 
 ```bash
@@ -180,9 +217,7 @@ sudo mount /dev/sdX1 /mnt/cb_usb
    * 若使用 `artifacts/` 成品包（路线 A）：
      ```bash
      sudo rm -rf /mnt/cb_usb/lib/modules/*
-     sudo tar -xzf artifacts/modules-6.12.117-cloudbook-v26.tar.gz -C /mnt/cb_usb/
-     # 覆盖写入最新的修复版 mt7663s.ko（支持 NetworkManager 无 P2P 冲突）
-     sudo cp artifacts/mt7663s.ko /mnt/cb_usb/lib/modules/6.12.117-cloudbook/kernel/drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s.ko
+     sudo tar -xzf artifacts/modules-6.12.117-cloudbook.tar.gz -C /mnt/cb_usb/
      sudo depmod -b /mnt/cb_usb 6.12.117-cloudbook
      ```
 
@@ -223,10 +258,12 @@ sudo mount /dev/sdX1 /mnt/cb_usb
 
 ## 5. 阶段二：刷写 `boot_a` 与 `misc` 并首次开机验证
 
-### 5.1 打包 U 盘引导镜像 `boot_linux_612_v28_usb.img`
-（如果你走路线 A 且手头只有 `boot_linux_612_v29_emmc.img`，只需要用 `v28` DTB 或直接重打包改 `root=LABEL=ROOTFS` 即可）：
+### 5.1 准备 U 盘引导镜像 `boot_linux_612_v28_usb.img`
+
+`artifacts/boot_linux_612_v28_usb.img` 已经打好在案（`root=LABEL=ROOTFS`，v28 DTB）。只有在你改过内核/DTB 后才需要重打：
+
 ```bash
-RAMDISK="$PWD/artifacts/initramfs-6.12.117-cloudbook-usb.img" \
+RAMDISK="$PWD/artifacts/initramfs-6.12.117-cloudbook-emmc.img" \
 CMDLINE='console=tty0 console=ttyS2,115200n8 root=LABEL=ROOTFS rootfstype=ext4 rootwait rw net.ifnames=0 clk_ignore_unused pd_ignore_unused cpuidle.off=1 systemd.show_status=1 systemd.default_timeout_start_sec=15s loglevel=7 no_console_suspend' \
 ./build_boot_linux_612.sh "$PWD/artifacts/boot_linux_612_v28_usb.img"
 ```
@@ -235,7 +272,7 @@ CMDLINE='console=tty0 console=ttyS2,115200n8 root=LABEL=ROOTFS rootfstype=ext4 r
 ```bash
 python3 switch_ab_slot.py test_slot_a /tmp/misc_try_slot_a.img
 ```
-该镜像会将 `Slot A (Linux)` 设为 `priority=15, tries_remaining=3, successful_boot=0`，将 `Slot B (Android)` 保持为 `priority=14, successful_boot=1`。**万一启动失败，只需强制关机再开机连续 3 次，U-Boot 会自动切回 Android `boot_b`**。
+该配置给 Linux A 槽三次试启动机会（`15/3/0`），Android B 槽已标记成功（`14/0/1`）。U-Boot 每次选中 A 才扣一次。如果 Linux 未把 A 标记为成功，次数用尽后的下一次重启或上电就会选择 B。Linux 正在运行时，黑屏本身不会触发重启。能登录 Linux 时，可以正常执行 `reboot`。
 
 ### 5.3 写入 `boot_a` 与 `misc`（任选 ADB 或 Rockusb 方式）
 
@@ -254,13 +291,13 @@ IMG_SIZE=$(stat -c %s artifacts/boot_linux_612_v28_usb.img)
 adb shell "head -c $IMG_SIZE /dev/block/by-name/boot_a | sha256sum"
 adb shell "sha256sum /dev/block/by-name/misc"
 ```
-核对两端 `sha256sum` 一致后，把制作好的 **USB 启动 U 盘插到笔记本任意 USB-A 口**，执行：
+核对两端 `sha256sum` 一致后，把制作好的 **USB 启动 U 盘插到笔记本的 host USB-A 口**（不是 Type-C 旁边那个 OTG 刷机口），执行：
 ```bash
 adb reboot
 ```
 
 #### 方式 5B：用双公头线连 Type-C 旁边的 USB-A 口，通过 `rkdeveloptool` 刷写
-若先在原厂 Android 执行 `adb reboot loader`（或接串口上电连按 `Ctrl+B` 再执行 `rockusb 0 mmc 0`）：
+若先在原厂 Android 执行 `adb reboot loader`（或接串口上电连按 `Ctrl+C` 再执行 `rockusb 0 mmc 0`）：
 ```bash
 rkdeveloptool ld
 rkdeveloptool wlx boot_a artifacts/boot_linux_612_v28_usb.img
@@ -386,4 +423,4 @@ head -c "$(stat -c %s /tmp/boot_linux_612_v29_emmc.img)" /dev/mmcblk0p11 | sha25
    * **仅切换启动槽回 Android**（保留 eMMC Linux 数据，随时可再切回）：在 Linux 下把 `switch_ab_slot.py restore_slot_b` 生成的镜像写入 `/dev/mmcblk0p6` 并重启（详见 [OTG_RECOVERY.md](OTG_RECOVERY.md) 第 6 节）。
    * **彻底整机恢复出厂**：用 stage 1 的 U 盘启动进入 Linux，运行仓库内的 [restore_factory_android.sh](../scripts/restore_factory_android.sh) 并传入之前完整冷备份目录，即可恢复 `boot_a`、`metadata`、`cache`、`userdata` 与 `misc`。
 3. **黑屏/卡死救砖**：
-   * 用双公头 USB-A 线连 **Type-C 旁边的 USB-A 口** 与电脑，接主板 `UART2`（`115200 8N1`）上电连按 `Ctrl+B` 进入 U-Boot Rockusb/BootROM 下载模式，通过 `rkdeveloptool` 写入备份分区（详见 [OTG_RECOVERY.md](OTG_RECOVERY.md)）。
+   * 用双公头 USB-A 线连 **Type-C 旁边的 USB-A 口** 与电脑，接主板 `UART2`（`115200 8N1`）上电连按 `Ctrl+C` 进入 U-Boot Rockusb/BootROM 下载模式，通过 `rkdeveloptool` 写入备份分区（详见 [OTG_RECOVERY.md](OTG_RECOVERY.md)）。

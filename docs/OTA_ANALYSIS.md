@@ -3,22 +3,41 @@
 > 分析对象：`W6XX_W52X-RK3568-T-ALLV2.25.20P06-Firmware.zip`（906 MB，2025-10-19 构建）
 > 设备代号：`rk3568_r_w600d2`（同族 W6XX/W52X，产品列表含 W621D，不含 W620D）
 > 结论仅来自离线解析，未连接任何设备。
+>
+> **范围**：本机实际运行的是 `V2.24.30P6-20241112`（vendor APK `V2.24.30P5`），不是这份 P06 镜像。§1、§7、§9 是本机实测；其余包级/内核级事实只适用于 P06。本机 ADB、ACS、遥测与包列表以 `DEVICE_MONITORING_AUDIT.md`、`THIRD_PARTY_PACKAGE_AUDIT.md`、`SECURITY_ASSESSMENT.md` 的真机结论为准。
 
-## 1. ADB 的启动条件（本次最重要的发现）
+## 1. ADB 的启动条件（本机实测）
 
-固件**默认开启了相关属性**，但被厂商开关二次拦截：
+本机是 `userdebug`，标准 Android 设置即可拉起 adbd；`persist.vendor.adbmode.enable` 不是持续门控。
 
-| 位置 | 内容 |
+| 项 | 本机值/行为 |
 | :--- | :--- |
-| `default.prop` | `persist.sys.usb.config=adb`、`ro.debuggable=1`、`service.adb.tcp.port=5555` |
-| `init.usb.configfs.rc` | `on property:sys.usb.config=adb && ... && property:persist.vendor.adbmode.enable=1 → start adbd` |
-| `default.prop` | `persist.vendor.adbmode.enable=0`（默认关闭） |
-| vendor 启动脚本 | `if [ $adbmode_enable != "1" ]; then stop adbd; fi` |
-| system 字符串 | 存在 `adbmodeAuth`、注释掉的 `#setprop persist.vendor.adbmode.enable 1` |
+| `ro.build.type` | `userdebug` |
+| `ro.debuggable` | `1` |
+| `ro.adb.secure` | 空 |
+| `service.adb.root` | `1` |
+| `service.adb.tcp.port` | `5555` |
+| `settings global adb_enabled` | `1` |
+| `settings global development_settings_enabled` | `1` |
+| `persist.vendor.adbmode.enable` | `0` |
+| `runtime.zte.adbmode` | 空 |
+| `adbDataEnc.zip` | 不存在 |
+| `init.svc.zted` | `stopped`（one-shot） |
 
-结论：**USB adb 和 TCP 5555 adb 都被 `persist.vendor.adbmode.enable` 门控，默认是 0**。设置里的“USB 调试”开关很可能就是写这个属性的入口（这与社区反馈的“打开开发者选项后 adb 可用”一致）。
+`/vendor/bin/zted` 只在 `sys.boot_completed=1` 时执行一次：
 
-## 2. 升级 / 管理接口
+```sh
+adbmode_enable=`getprop persist.vendor.adbmode.enable`
+if [ $adbmode_enable != "1" ]; then
+    stop adbd
+fi
+```
+
+执行完 `zted` 退出（`oneshot`），不会在之后的标准 adb 开关时再次执行。因此开机后通过设置打开 USB 调试/无线调试，adbd 会重新启动，`persist.vendor.adbmode.enable=0` 不会继续拦截。
+
+`adbDataEnc.zip` 不存在，当前 adbd 不是由 `uSmartSettings` 的授权包拉起，而是 AOSP 标准 adb 开关。
+
+## 2. 升级 / 管理接口（P06 离线包，非本机）
 
 | 用途 | 地址 |
 | :--- | :--- |
@@ -26,6 +45,8 @@
 | TR-069 远程管理 (ACS) | `http://218.98.6.253:28002/vops-autoops-protocol/web/tr069` |
 | 遥测上报（vendor） | `/vops-autoops-http/terminal/cloud/{boot,alarm,event,period}` |
 | 公共 CDN（平铺） | `http://ctmcdn.zx.zte.com.cn/vops-autoops-cpe/download/images/<文件名>.zip` |
+
+> 本机 ACS 是 `https://ecloudbook.cmecloud.cn:28897/...`，遥测是 `218.98.6.253:28001`；上表只属于 P06 离线镜像。
 
 - 公共 CDN 上本包 `Content-Length = 949,486,641`，与本地文件一致。
 - 同前缀 `P05/P07/P08` 均 404，**P06 是该 CDN 上当前最新**。
@@ -78,7 +99,7 @@
   | `woble_setting_7663.bin` | 2,503 B |
   | `wifi_mt7661.cfg` | 1,156 B |
 
-- 与 linux-firmware 对比：`mt7663_patch_e2_hdr.bin` 与 `mt7663pr2h.bin` **大小相同、哈希不同**（不同 ROM patch 构建）；N9 固件大小不同（厂商封装格式）。厂商固件只能配厂商驱动，但 ROM patch 可做 A/B 对比试验。
+- 本机 Android B 的 `vendor_b` 与这份 OTA 中的 N9 和 ROM patch 分别逐字节一致。Linux 7.3.5 的 W103D 驱动可加载这对原厂文件，目标名称依次为 `mt7663_n9_v3.bin`、`mt7663pr2h.bin`。内核报告 N9 构建时间 `20230629193734`，并已完成双频关联和数据传输。[真机无线验证](USB_TEST_KIT_7.3.md#wi-fi-连接验证)
 
 ## 5. 系统构建与运行时属性
 
@@ -150,16 +171,13 @@ T / T4 / TAI / TZTE 四个渠道配置包均包含 24RTW。外层 `update.json` 
 
 这解释了“为什么厂商 BSP 能硬解 HEVC/VP9”：靠 MPP + rkvdec2，主线至今没有。
 
-## 7. 对“免激活开 adb”的最终结论
+## 7. ADB 结论（本机）
 
-1. 根因不是账号，而是 **`persist.vendor.adbmode.enable=0`** 关闭了 adbd。
-2. 不需要刷机、不需要账号的入口只有设置界面：用输入法搜索绕过（Google 拼音是默认输入法），进“关于平板”连点版本号，开 USB 调试。
-3. 如果打开后仍显示 `unauthorized`：Android 11 还有“无线调试”，可在设置里配对后 `adb pair <ip>:<port>`；或直接 `adb connect <ip>:5555`（`service.adb.tcp.port=5555` 已在默认属性里）。
-4. 如果开关没有写入 `adbmode`，则只能改 boot ramdisk：
-   - `prop.default` 增加 `persist.vendor.adbmode.enable=1`
-   - 或在 `init.rc` 的 `on early-init` 中 `setprop persist.vendor.adbmode.enable 1`
-   - 保留 `persist.sys.usb.config=adb`
-5. 激活流程与 adb 是两条独立链路，开 adb 不需要先激活。
+1. 本机是 `userdebug`，`ro.debuggable=1`、`ro.adb.secure` 为空、`service.adb.tcp.port=5555`。
+2. `zted` 只在 boot 时执行一次 `stop adbd`；之后标准设置里的 USB 调试/无线调试可以重新拉起 adbd。
+3. `persist.vendor.adbmode.enable=0` 只是开机时的旧状态，不是持续授权门控。
+4. 不需要账号、不需要厂商 `adbDataEnc.zip`、不需要改 boot/ramdisk；标准设置路径即可。
+5. 激活与 adb 是独立链路；开 adb 不需要先激活。
 
 ## 8. 仍未解决
 
@@ -167,27 +185,14 @@ T / T4 / TAI / TZTE 四个渠道配置包均包含 24RTW。外层 `update.json` 
 - `W620D` 在设备上的实际 `custcode` 决定使用 `W600DSE-T` 还是 `W600DSE_THZTE` 清单，需要真机 `getprop` 确认。
 - 公共 CDN 仅有 CTCC 前缀的 P06 包；T 渠道包未在公网镜像中找到。
 
-## 9. ADB 开关的真实实现（`uSmartSettings` 反编译确认）
+## 9. AdbManager 代码（离线 P06 包）与本机实际
 
-`com.zte.usmartsettings` 里的 `AdbManager`（`com.zte.usmartsetting.l.b.a`）：
+离线 P06 的 `com.zte.usmartsettings` 里存在 `AdbManager`（`com.zte.usmartsetting.l.b.a`）：
 
-1. **1 秒内连点 5 次**触发（`SystemClock.uptimeMillis` 五元组窗口 1000 ms）
-2. 读取 `/data/data/com.zte.usmartsettings/adbDataEnc.zip`（或 `/data/com.zte.usmartsetting/adbDataEnc.zip`），解密为两行：**SN** 与 **可用次数**
-3. 校验：
-   - `SN` 必须等于 `ro.product.productid`
-   - 次数 > 0
-   - 包内 SHA-256 不能出现在 `persist.sys.adbEnabled.sha256` 集合中（防重放）
-   - `runtime.zte.adbmode != 1`
-4. 通过后执行：
-   ```
-   setprop ctl.start adbd
-   setprop sys.usmartsettings.status debugged
-   setprop runtime.zte.adbmode 1
-   persist.sys.adbEnabled.count 递减
-   ```
-5. 另有自动路径：`persist.sys.autotest.openadb=1` 时开机自动校验并启动 adbd
+1. 1 秒内连点 5 次触发（`SystemClock.uptimeMillis` 五元组窗口 1000 ms）。
+2. 读取 `/data/data/com.zte.usmartsettings/adbDataEnc.zip`（或 `/data/com.zte.usmartsetting/adbDataEnc.zip`），解密为两行：SN 与可用次数。
+3. 校验 SN、次数、`persist.sys.adbEnabled.sha256` 防重放、`runtime.zte.adbmode != 1`。
+4. 通过后 `setprop ctl.start adbd`、`setprop runtime.zte.adbmode 1`、递减次数。
+5. 另有 `persist.sys.autotest.openadb=1` 的开机自动路径。
 
-**结论**：没有厂商下发的 `adbDataEnc.zip` 授权包，界面里连点 5 次只会提示失败——这就是社区“输入法进设置开 USB 调试”有时打不开 adb 的根本原因。要得到 adb，只有两条路：
-
-- 向售后索取针对本机 SN 的授权包；
-- 改 `boot_b` 的 ramdisk，直接 `setprop runtime.zte.adbmode 1` + `start adbd`（需先有 loader 通道）。
+**本机实际**：`adbDataEnc.zip` 不存在，`runtime.zte.adbmode` 为空；adbd 是标准设置打开的，不经过这条五连点授权路径。因此“没有授权包就打不开 adb”不适用于本机；本机用标准 USB 调试/无线调试即可。该 AdbManager 代码只说明 P06 包里有一条厂商授权实现，不构成本机门控。

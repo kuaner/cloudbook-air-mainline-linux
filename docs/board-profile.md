@@ -58,7 +58,8 @@
 |---|---|---|---|---|
 | 调试串口位置 | 主板物理测试焊盘（对应 SoC `UART2` @ `0xfe660000`） | L1 / L2 | 串口日志 `/dev/ttyUSB0` 畅通 | 已验证 |
 | 串口参数 | `115200 8N1` (TTL 3.3V) | L1 / L2 | 实机通信实测 | 已验证 |
-| U-Boot 救砖模式 | 支持 `Ctrl+B` 串口热键进入 BootROM Download 模式 | L3 | `uboot_hotkeys.bin.c` 逆向 | 已验证 |
+| U-Boot 串口中断 | `Ctrl+C`（U-Boot 字符串 `Hit key to stop autoboot('CTRL+C')`，`bootdelay=0`，需上电瞬间连按） | L3 | `uboot.img` 字符串 | 待真机复验 |
+| U-Boot 无 UART 入口 | ADC `volumeup-key`（`label = "recovery"`）按住开机 → recovery/download | L3 | `uboot.img` DTB `adc-keys` | 待真机验证 |
 | OTG 刷机接口 | **Type-C 旁边的 USB-A 口**（内部物理连接 `dwc3@fcc00000` OTG 控制器） | L3 | `uboot_embedded.dts` 逆向 | 已验证 |
 | A/B 槽引导回滚 | U-Boot 支持标准 Android `tries_remaining`（试引导上限 3 次，耗尽自动回退 Slot B） | L2 / L3 | `switch_ab_slot.py` / 实机回退验证 | 已验证 |
 
