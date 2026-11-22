@@ -1,0 +1,48 @@
+Subject: [PATCH] power: supply: sc2021: enable charger IRQ wake across suspend
+
+Port the CloudBook v30 SC2021 suspend/resume change to 7.3.5.
+
+--- a/drivers/power/supply/sc2021_charger.c
++++ b/drivers/power/supply/sc2021_charger.c
+@@ -57,6 +57,8 @@
+ 	struct gpio_desc *dpdm_gpio;
+ 	struct delayed_work evt_work;
+ 	struct mutex lock;
++	int irq;
++	bool irq_wake_enabled;
+ 
+ 	char fw_ver[16];
+ 	u8 last_typec;
+@@ -367,6 +369,8 @@
+ 			return dev_err_probe(dev, ret,
+ 					     "failed to request irq %d\n",
+ 					     client->irq);
++		sc->irq = client->irq;
++		device_init_wakeup(dev, true);
+ 	}
+ 
+ 	schedule_delayed_work(&sc->evt_work, 0);
+@@ -386,12 +390,23 @@
+ 	struct sc2021_device *sc = dev_get_drvdata(dev);
+ 
+ 	cancel_delayed_work_sync(&sc->evt_work);
++	if (sc->irq > 0 && device_may_wakeup(dev)) {
++		if (!enable_irq_wake(sc->irq))
++			sc->irq_wake_enabled = true;
++		else
++			dev_warn(dev, "failed to enable irq %d wake\n", sc->irq);
++	}
+ 	return 0;
+ }
+ 
+ static int sc2021_resume(struct device *dev)
+ {
+ 	struct sc2021_device *sc = dev_get_drvdata(dev);
++
++	if (sc->irq_wake_enabled) {
++		disable_irq_wake(sc->irq);
++		sc->irq_wake_enabled = false;
++	}
+ 
+ 	mutex_lock(&sc->lock);
+ 	sc->retries = 0;

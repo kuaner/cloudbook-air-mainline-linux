@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+#include "rk3568-ecloudbook-air-24rtw-v30-charging-led.dts"
+
+/ {
+	chosen {
+		bootargs = "console=tty0 console=ttyS2,115200n8 root=LABEL=ROOTFS rootfstype=ext4 rootwait rw net.ifnames=0 clk_ignore_unused pd_ignore_unused cpuidle.off=1 systemd.show_status=1 systemd.default_timeout_start_sec=15s";
+	};
+};

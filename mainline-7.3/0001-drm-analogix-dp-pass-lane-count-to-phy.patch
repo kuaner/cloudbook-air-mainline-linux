@@ -1,0 +1,29 @@
+Subject: [PATCH] drm/bridge: analogix_dp: pass lane count to the PHY during training
+
+The RK3568 Naneng PHY validates the lane count for every configure call.
+The rate and voltage requests leave it zero. The PHY rejects the rate
+before powering up the main-link lanes and never applies the requested
+swing or pre-emphasis. AUX can still read the panel EDID in this state.
+
+Pass the negotiated lane count for both requests, as the lane-count
+request already does. The full and fast training paths share these helpers.
+
+diff --git a/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c b/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c
+--- a/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c
++++ b/drivers/gpu/drm/bridge/analogix/analogix_dp_reg.c
+@@ -523,6 +523,7 @@ void analogix_dp_set_link_bandwidth(struct analogix_dp_device *dp, u32 bwtype)
+ 	if (dp->phy) {
+ 		union phy_configure_opts phy_cfg = {0};
+ 
++		phy_cfg.dp.lanes = dp->link_train.lane_count;
+ 		phy_cfg.dp.link_rate =
+ 			drm_dp_bw_code_to_link_rate(dp->link_train.link_rate) / 100;
+ 		phy_cfg.dp.set_rate = true;
+@@ -595,6 +596,7 @@ void analogix_dp_set_lane_link_training(struct analogix_dp_device *dp)
+ 			phy_cfg.dp.pre[lane] = pe;
+ 		}
+ 
++		phy_cfg.dp.lanes = dp->link_train.lane_count;
+ 		phy_cfg.dp.set_voltages = true;
+ 		ret = phy_configure(dp->phy, &phy_cfg);
+ 		if (ret && ret != -EOPNOTSUPP) {

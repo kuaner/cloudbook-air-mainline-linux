@@ -1,0 +1,42 @@
+Bluetooth: handle an unsupported Read Local Simple Pairing Options command
+
+The MT7663S on the CloudBook Air advertises opcode 0x100c with the
+factory ROM patch, then responds with Unknown HCI Command. This aborts
+HCI initialization before post_init, leaving the Wi-Fi function waiting
+for the Bluetooth supplier on every probe.
+
+Treat this specific response to the optional query like an unset support
+bit. Clearing the bit also keeps MGMT from reporting key information or
+public key validation based on a command the controller rejected. Leave
+other errors and the shared eFuse initialization ordering intact.
+
+diff --git a/net/bluetooth/hci_sync.c b/net/bluetooth/hci_sync.c
+--- a/net/bluetooth/hci_sync.c
++++ b/net/bluetooth/hci_sync.c
+@@ -5013,11 +5013,24 @@ static int hci_read_local_codecs_sync(struct hci_dev *hdev)
+ /* Read local pairing options if the HCI command is supported */
+ static int hci_read_local_pairing_opts_sync(struct hci_dev *hdev)
+ {
++	int err;
++
+ 	if (!(hdev->commands[41] & 0x08))
+ 		return 0;
+ 
+-	return __hci_cmd_sync_status(hdev, HCI_OP_READ_LOCAL_PAIRING_OPTS,
+-				     0, NULL, HCI_CMD_TIMEOUT);
++	err = __hci_cmd_sync_status(hdev, HCI_OP_READ_LOCAL_PAIRING_OPTS,
++				    0, NULL, HCI_CMD_TIMEOUT);
++	if (err != -EBADRQC)
++		return err;
++
++	/* Some controllers advertise this optional command but reply with
++	 * Unknown HCI Command. MGMT also consults this capability bit.
++	 */
++	hci_dev_lock(hdev);
++	hdev->commands[41] &= ~0x08;
++	hci_dev_unlock(hdev);
++	bt_dev_warn(hdev, "Read Local Simple Pairing Options advertised but unsupported");
++	return 0;
+ }
+ 
+ /* Get MWS transport configuration if the HCI command is supported */

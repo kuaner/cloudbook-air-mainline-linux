@@ -1,0 +1,59 @@
+Subject: [PATCH] drm/rockchip: skip frontbuffer flushes on CloudBook Air
+
+The RK3568 VOP2 on this board scans the primary plane continuously. It
+does not use damage clips or the DRM self-refresh helper. Advertising
+drm_atomic_helper_dirtyfb nevertheless makes the Xorg modesetting driver
+submit a synchronous atomic commit for every batch of frontbuffer damage.
+On the built-in display the Xorg main thread repeatedly waits for vblank
+in DIRTYFB while the software cursor is moving.
+
+Leave the optional framebuffer dirty callback unset on this board. Xorg
+can then omit its frontbuffer flushes. Keep the AFBC framebuffer setup
+and ordinary KMS commits, including page flips, on the existing path.
+
+diff --git a/drivers/gpu/drm/rockchip/rockchip_drm_fb.c b/drivers/gpu/drm/rockchip/rockchip_drm_fb.c
+--- a/drivers/gpu/drm/rockchip/rockchip_drm_fb.c
++++ b/drivers/gpu/drm/rockchip/rockchip_drm_fb.c
+@@ -5,6 +5,7 @@
+  */
+ 
+ #include <linux/kernel.h>
++#include <linux/of.h>
+ 
+ #include <drm/drm.h>
+ #include <drm/drm_atomic.h>
+@@ -24,6 +25,11 @@ static const struct drm_framebuffer_funcs rockchip_drm_fb_funcs = {
+ 	.dirty	       = drm_atomic_helper_dirtyfb,
+ };
+ 
++static const struct drm_framebuffer_funcs rockchip_drm_fb_funcs_continuous = {
++	.destroy       = drm_gem_fb_destroy,
++	.create_handle = drm_gem_fb_create_handle,
++};
++
+ static const struct drm_mode_config_helper_funcs rockchip_mode_config_helpers = {
+ 	.atomic_commit_tail = drm_atomic_helper_commit_tail_rpm,
+ };
+@@ -33,6 +39,7 @@ rockchip_fb_create(struct drm_device *dev, struct drm_file *file,
+ 		   const struct drm_format_info *info,
+ 		   const struct drm_mode_fb_cmd2 *mode_cmd)
+ {
++	const struct drm_framebuffer_funcs *funcs = &rockchip_drm_fb_funcs;
+ 	struct drm_afbc_framebuffer *afbc_fb;
+ 	int ret;
+ 
+@@ -40,9 +47,12 @@ rockchip_fb_create(struct drm_device *dev, struct drm_file *file,
+ 	if (!afbc_fb)
+ 		return ERR_PTR(-ENOMEM);
+ 
++	/* This board's VOP2 fetches frontbuffer writes on every scanout. */
++	if (of_machine_is_compatible("zte,ecloudbook-air-24rtw"))
++		funcs = &rockchip_drm_fb_funcs_continuous;
++
+ 	ret = drm_gem_fb_init_with_funcs(dev, &afbc_fb->base,
+-					 file, info, mode_cmd,
+-					 &rockchip_drm_fb_funcs);
++					 file, info, mode_cmd, funcs);
+ 	if (ret) {
+ 		kfree(afbc_fb);
+ 		return ERR_PTR(ret);
