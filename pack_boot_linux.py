@@ -71,10 +71,12 @@ def patch_resource_img(template_bytes: bytes, dtb_bytes: bytes) -> bytes:
         if data_off + old_sz > len(res_data):
             raise ValueError(f"Resource entry {idx} exceeds the template size")
         if len(dtb_bytes) > old_sz:
-            raise ValueError(
-                f"DTB is too large for resource entry {idx}: "
-                f"{len(dtb_bytes)} > {old_sz} bytes"
-            )
+            # RSCE entries locate their payload by sector. Allocate a new
+            # extent so a larger DTB cannot overwrite the next board or logo.
+            data_off = align_up(len(res_data), BLOCK_SIZE)
+            end_off = data_off + align_up(len(dtb_bytes), BLOCK_SIZE)
+            res_data.extend(bytes(end_off - len(res_data)))
+            struct.pack_into("<I", res_data, entr_off + 260, data_off // BLOCK_SIZE)
 
         # Write DTB bytes
         res_data[data_off:data_off + len(dtb_bytes)] = dtb_bytes

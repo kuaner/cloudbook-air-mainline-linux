@@ -19,7 +19,8 @@ apply_patch_if_missing() {
             # git apply parses git-format diffs strictly; the patches in
             # mainline-6.12/patches are validated against a pristine 6.12.117
             # tree, so no fuzz/offset handling is needed.
-            git -C "$SRC_DIR" apply --whitespace=nowarn \
+            # A source tarball inside this repo must be its own patch root.
+            GIT_CEILING_DIRECTORIES="$ROOT_DIR" git -C "$SRC_DIR" apply --whitespace=nowarn \
                 "$ROOT_DIR/mainline-6.12/patches/$patch_file"
         else
             patch -d "$SRC_DIR" -p1 --forward < "$ROOT_DIR/mainline-6.12/patches/$patch_file"
@@ -46,6 +47,14 @@ cp "$ROOT_DIR/mainline-6.12/"rk3568-ecloudbook-air-24rtw*.dts \
    "$SRC_DIR/arch/arm64/boot/dts/rockchip/"
 cp "$DTS_SRC" \
    "$SRC_DIR/arch/arm64/boot/dts/rockchip/$DTS_NAME.dts"
+# Register the two board DTBs explicitly: a direct "make rockchip/foo.dtb"
+# target only exists when the DTB is listed in this Makefile.
+for d in "$DTS_NAME" "$DTS_NAME-v28-usb2-pm-fix"; do
+    MK="$SRC_DIR/arch/arm64/boot/dts/rockchip/Makefile"
+    grep -qF "+= $d.dtb" "$MK" || \
+        sed -i "1a dtb-\$(CONFIG_ARCH_ROCKCHIP) += $d.dtb" "$MK"
+done
+
 
 # Apply required P3/P4 kernel patches (0002 is diagnostic-only; 0004 fixed-1v8 is bypassed by v23 CMD11).
 apply_patch_if_missing 'USB_DEVICE(0x0fe6, 0x9900)' "drivers/net/usb/r8152.c" "0001-r8152-add-sr9900-id.patch"
@@ -60,6 +69,7 @@ apply_patch_if_missing 'mt7663s_w103d_sanitize_wiphy' "drivers/net/wireless/medi
 apply_patch_if_missing 'mt7663s_w103d_vendor_disconnect_bss' "drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c" "0012-mt76-mt7663s-w103d-fix-band-switch-disconnect.patch"
 apply_patch_if_missing 'mt7663s_w103d_sync_vendor_connect' "drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c" "0013-mt76-mt7663s-w103d-tx-ampdu-and-sdio-throughput.patch"
 apply_patch_if_missing 'sbs_resolve_status' "drivers/power/supply/sbs-battery.c" "0014-power-supply-sbs-align-charging-led-status.patch"
+apply_patch_if_missing 'rockchip_dp_aux_done_probing' "drivers/gpu/drm/rockchip/analogix_dp-rockchip.c" "0014-drm-rockchip-probe-edp-panel-on-aux-bus.patch"
 
 # Keep storage, UART, USB Rootfs, PMIC and display support built into the kernel;
 # keep P4 peripheral drivers (=y/=m) aligned with config-6.12.117-cloudbook.
@@ -112,7 +122,7 @@ apply_patch_if_missing 'sbs_resolve_status' "drivers/power/supply/sbs-battery.c"
 
 make -C "$SRC_DIR" O="$OUT_DIR" ARCH=arm64 LLVM=1 olddefconfig
 make -C "$SRC_DIR" O="$OUT_DIR" ARCH=arm64 LLVM=1 -j"$JOBS" \
-    DTC_FLAGS="-@" Image "rockchip/$DTS_NAME.dtb"
+    DTC_FLAGS="-@" Image dtbs
 if [[ "$BUILD_MODULES" == "1" ]]; then
     make -C "$SRC_DIR" O="$OUT_DIR" ARCH=arm64 LLVM=1 -j"$JOBS" modules
 fi
