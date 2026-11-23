@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
-# Build the matching USB, eMMC and boot_a images with the verified v30 kernel.
+# Build the matching USB, eMMC and boot_a images from the packed v30 kernel.
 set -euo pipefail
 
 repo=$(cd -- "$(dirname -- "$0")/.." && pwd)
 base=$(realpath "${1:-$repo/artifacts/7.3/rootfs-7.3.5-cloudbook.tar.zst}")
 output=${2:-$repo/artifacts/7.3/desktop-kuaner-$(date +%Y%m%d-%H%M%S)}
-kernel=$(realpath "${CLOUDBOOK_V30_INPUTS:-$repo/artifacts/7.3/candidates/build10-v30}")
+kver=7.3.5-cloudbook
+kernel=$(realpath "${CLOUDBOOK_V30_INPUTS:-$repo/artifacts/7.3}")
+kernel_image=Image-$kver
+modules_tarball=modules-$kver.tar.gz
+if [[ -n "${CLOUDBOOK_V30_INPUTS:-}" && ! -e "$kernel/$kernel_image" ]]; then
+    kernel_image=Image-$kver-build10
+    modules_tarball=modules-$kver-build10.tar.gz
+fi
 mkdir -p "$output"
 output=$(cd -- "$output" && pwd)
 
-for file in "$base" "$kernel/Image-7.3.5-cloudbook-build10" \
-    "$kernel/modules-7.3.5-cloudbook-build10.tar.gz" "$kernel/config-7.3.5-cloudbook" \
+for file in "$base" "$kernel/$kernel_image" \
+    "$kernel/$modules_tarball" "$kernel/config-$kver" \
     "$kernel/rk3568-ecloudbook-air-24rtw-v30-emmc.dtb" "$repo/artifacts/extracted_resource.img"; do
     if [[ ! -s "$file" ]]; then
         echo "Missing input: $file" >&2
@@ -21,6 +28,7 @@ done
 # Privilege and mounts are confined to the throwaway Linux build container.
 docker run --rm -i --privileged --platform linux/arm64 \
     --env CLOUDBOOK_LOGIN_PASSWORD \
+    --env "KERNEL_IMAGE=$kernel_image" --env "KERNEL_MODULES=$modules_tarball" \
     --mount "type=bind,src=$repo,dst=/work,readonly" \
     --mount "type=bind,src=$base,dst=/base.tar.zst,readonly" \
     --mount "type=bind,src=$kernel,dst=/kernel,readonly" \
@@ -68,7 +76,7 @@ mount --rbind /dev "$root/dev"
 mount --make-rslave "$root/dev"
 
 ROOTFS_ROOT="$root" KVER="$kver" ROOT_LABEL=EMMC_ROOTFS \
-    MODULES_TARBALL="/kernel/modules-$kver-build10.tar.gz" \
+    MODULES_TARBALL="/kernel/$KERNEL_MODULES" \
     sh /work/scripts/rootfs-postprocess-debian13.sh
 
 rm "$policy"
@@ -100,7 +108,7 @@ debugfs -R 'cat /etc/fstab' "$stage/$prefix-usb.ext4" | grep '^LABEL=ROOTFS '
 zstd -q -T0 "$stage/$prefix-usb.ext4" -o "$stage/$prefix-usb.ext4.zst"
 
 python3 /work/pack_boot_linux.py \
-    --kernel "/kernel/Image-$kver-build10" --ramdisk "$root/boot/initrd.img-$kver" \
+    --kernel "/kernel/$KERNEL_IMAGE" --ramdisk "$root/boot/initrd.img-$kver" \
     --dtb /kernel/rk3568-ecloudbook-air-24rtw-v30-emmc.dtb \
     --resource-template /work/artifacts/extracted_resource.img \
     --cmdline 'console=tty0 console=ttyS2,115200n8 root=LABEL=EMMC_ROOTFS rootfstype=ext4 rootwait rw net.ifnames=0 clk_ignore_unused pd_ignore_unused cpuidle.off=1 systemd.default_timeout_start_sec=15s no_console_suspend quiet splash logo.nologo plymouth.ignore-serial-consoles' \

@@ -47,7 +47,8 @@ for board_patch in \
         "$ROOT_DIR/mainline-7.3/0002-drm-rockchip-skip-dirtyfb-on-cloudbook-air.patch" \
         "$ROOT_DIR/mainline-7.3/0003-bluetooth-handle-unsupported-local-pairing-options.patch" \
         "$ROOT_DIR/mainline-7.3/0004-power-sc2021-charger-wakeup.patch" \
-        "$ROOT_DIR/mainline-6.12/patches/0014-power-supply-sbs-align-charging-led-status.patch"; do
+        "$ROOT_DIR/mainline-6.12/patches/0014-power-supply-sbs-align-charging-led-status.patch" \
+        "$ROOT_DIR/mainline-6.12/patches/0015-rtc-rk808-use-gregorian-calendar-on-cloudbook-air.patch"; do
     if ! patch -d "$SRC_DIR" -p1 --dry-run --reverse --force < "$board_patch" >/dev/null; then
         patch -d "$SRC_DIR" -p1 --forward < "$board_patch"
     fi

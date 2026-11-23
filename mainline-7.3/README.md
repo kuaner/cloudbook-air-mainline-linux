@@ -26,6 +26,7 @@
    - Analogix RK3568 eDP 板级匹配与 BOE 面板时序。附加补丁 `0001-drm-analogix-dp-pass-lane-count-to-phy.patch` 在设置速率和训练电压时传入实际通道数，满足 Naneng PHY 的参数检查。
    - 附加补丁 `0002-drm-rockchip-skip-dirtyfb-on-cloudbook-air.patch` 让这块板连续扫描的 VOP2 帧缓冲省去局部重绘通知，针对 Xorg 绘制软件光标时反复等待垂直刷新的问题。使用者已确认 `#9` 的内屏光标恢复平滑。
    - 附加补丁 `0003-bluetooth-handle-unsupported-local-pairing-options.patch` 处理 MT7663S 在启动时拒绝可选 HCI 命令 `0x100c` 的情况，使初始化能够继续到共享芯片就绪通知。验证范围见[Wi-Fi 连接验证](../docs/USB_TEST_KIT_7.3.md#wi-fi-连接验证)。
+   - 两条主线构建共用 `0015-rtc-rk808-use-gregorian-calendar-on-cloudbook-air.patch`，让本机的 RK809 与原厂 Android 使用相同的 RTC 日期格式。
 
 ## 2. 复现
 
@@ -38,6 +39,7 @@ git apply path/to/0013-mt76-mt7663s-w103d-tx-ampdu-and-sdio-throughput.patch
 git apply path/to/0001-drm-analogix-dp-pass-lane-count-to-phy.patch
 git apply path/to/0002-drm-rockchip-skip-dirtyfb-on-cloudbook-air.patch
 git apply path/to/0003-bluetooth-handle-unsupported-local-pairing-options.patch
+git apply path/to/0015-rtc-rk808-use-gregorian-calendar-on-cloudbook-air.patch
 
 cp path/to/config-7.3.5-cloudbook .config
 make ARCH=arm64 LLVM=1 olddefconfig
@@ -108,13 +110,15 @@ make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
 
 新版桌面在 LightDM 中使用 `kuaner` 登录，初始密码为 `kuaner`。首次进入 i3 会加载 Archcraft 配置、Polybar、中文 Rofi 和深色 GTK 主题。按 `Win+D` 打开应用菜单，按 `Win+Enter` 打开 Xfce Terminal，点顶栏网络图标选择 Wi-Fi。时区为 `Asia/Shanghai`，首选 NTP 服务器为 `ntp.aliyun.com`。[桌面快捷键与 U 盘试跑记录](../docs/USB_TEST_KIT_7.3.md)
 
-用 Docker 从已有的 Debian 13 桌面 tar 包和本地 v30 `#10` 内核产物生成新镜像：
+用 Docker 从已有的 Debian 13 桌面 tar 包和当前 v30 内核产物生成新镜像。
 
 ```bash
+BUILD_MODULES=1 ./build_kernel_735.sh
+./scripts/pack_linux_artifacts.sh 7.3
 ./scripts/build-rootfs-735.sh artifacts/7.3/rootfs-7.3.5-cloudbook.tar.zst artifacts/7.3/desktop-kuaner
 ```
 
-构建需要可运行 ARM64 容器的 Docker、上述 Debian 13 LightDM 基础 tar 包、本地 `#10/v30` 内核与模块，以及从本机导出的 `artifacts/extracted_resource.img`。可通过 `CLOUDBOOK_LOGIN_PASSWORD` 设置初始密码，通过 `CLOUDBOOK_V30_INPUTS` 指定内核产物目录。重用旧镜像时，脚本会迁移 `cloudbook` 账户并保留其 UID/GID，将默认终端设为 Xfce Terminal，然后移除 `xterm`。
+构建需要可运行 ARM64 容器的 Docker、上述 Debian 13 LightDM 基础 tar 包，以及从本机导出的 `artifacts/extracted_resource.img`。桌面构建默认读取 `artifacts/7.3/` 下的内核、模块、配置和 v30 eMMC DTB。可通过 `CLOUDBOOK_LOGIN_PASSWORD` 设置初始密码，通过 `CLOUDBOOK_V30_INPUTS` 指定内核产物目录。重用旧镜像时，脚本会迁移 `cloudbook` 账户并保留其 UID/GID，将默认终端设为 Xfce Terminal，然后移除 `xterm`。
 
 | 产物 | 用途 |
 | --- | --- |
@@ -126,6 +130,20 @@ make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
 引导镜像启用 Plymouth CloudBook Air 动画并隐藏内核企鹅。按 `Esc` 可查看启动信息。LightDM 顶部的 `cloudbook` 标识按整条面板居中。桌面镜像也会安装带图标的 Linux 切换工具，安卓版单独构建安装。[双系统切换说明](../tools/system-switcher/README.md)
 
 制作同配置的本地根镜像时，把自己设备 `vendor_b` 的 `/etc/firmware/WIFI_RAM_CODE_MT7663.bin` 和 `mt7663_patch_e2_hdr.bin` 一起放入构建环境的 `/inputs/firmware/7.3.5-cloudbook/`，也可用 `MT7663_VENDOR_FIRMWARE_DIR` 指定目录。`scripts/rootfs-postprocess-debian13.sh` 按驱动所需文件名安装这两个文件。省略版本目录与覆盖变量时，脚本使用 `/inputs/firmware/` 中原有的发行版固件。
+
+### 双系统 RTC
+
+2026-11-23 真机复现了两个方向的日期偏差。Android 写入 RTC 后，旧 Debian 在启动时读到了 12 月 3 日。旧 Debian 写入后，原厂 Android 在启动时读到了 11 月 13 日。旧 Linux 驱动对 RK809 也应用了 RK808 的 11 月 31 日换算，偏差随年份累积。Rockchip Android 驱动对 RK809 直接使用公历。
+
+补丁使 `zte,ecloudbook-air-24rtw` 上的 RK809 时间和闹钟读写都直接使用公历，RTC 继续保存 UTC。升级时可以先在原厂 Android 中联网并确认时间正确，再启动新版 Debian。若新版 Debian 首次启动时 RTC 仍是旧格式，等 NTP 同步成功后，以管理员身份运行 `busybox hwclock -w -u -f /dev/rtc0` 将正确的 UTC 写回 RTC。
+
+刷入修复后的 7.3.5 内核后，三次启动的 `dmesg` 均在联网校时前从 RTC 读到了正确日期。
+
+| 真机验证路径 | 内核从 RTC 读到的 UTC |
+| --- | --- |
+| 原厂 Android → Debian | `2026-11-23 02:21:48` |
+| Debian 写入 RTC → Debian | `2026-11-23 02:23:40` |
+| Debian → 原厂 Android | `2026-11-23 02:24:53` |
 
 ## 8. 上游合并后
 

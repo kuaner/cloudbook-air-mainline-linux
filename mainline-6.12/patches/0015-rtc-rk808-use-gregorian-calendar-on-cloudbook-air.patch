@@ -1,0 +1,82 @@
+Subject: [PATCH] rtc: rk808: use the Gregorian calendar on CloudBook Air
+
+The stock Android driver reads and writes Gregorian dates on the RK809.
+Mainline applies the RK808 November-31 conversion to the same registers,
+adding ten days to the date set by Android in November 2026. A Linux RTC
+write applies the inverse offset, so both systems can overwrite each
+other's dates when their clocks synchronize.
+
+Use Gregorian dates for both time and alarm operations on this board's
+RK809. Keep the existing conversion for other boards and PMICs.
+
+diff --git a/drivers/rtc/rtc-rk808.c b/drivers/rtc/rtc-rk808.c
+index 59b8e9a..0097cf5 100644
+--- a/drivers/rtc/rtc-rk808.c
++++ b/drivers/rtc/rtc-rk808.c
+@@ -13,6 +13,7 @@
+ #include <linux/rtc.h>
+ #include <linux/bcd.h>
+ #include <linux/mfd/rk808.h>
++#include <linux/of.h>
+ #include <linux/platform_device.h>
+ 
+ /* RTC_CTRL_REG bitfields */
+@@ -53,6 +54,7 @@ struct rk808_rtc {
+ 	struct regmap *regmap;
+ 	struct rtc_device *rtc;
+ 	struct rk_rtc_compat_reg *creg;
++	bool use_gregorian_calendar;
+ 	int irq;
+ };
+ 
+@@ -136,7 +138,8 @@ static int rk808_rtc_readtime(struct device *dev, struct rtc_time *tm)
+ 	tm->tm_mon = (bcd2bin(rtc_data[4] & MONTHS_REG_MSK)) - 1;
+ 	tm->tm_year = (bcd2bin(rtc_data[5] & YEARS_REG_MSK)) + 100;
+ 	tm->tm_wday = bcd2bin(rtc_data[6] & WEEKS_REG_MSK);
+-	rockchip_to_gregorian(tm);
++	if (!rk808_rtc->use_gregorian_calendar)
++		rockchip_to_gregorian(tm);
+ 	dev_dbg(dev, "RTC date/time %ptRd(%d) %ptRt\n", tm, tm->tm_wday, tm);
+ 
+ 	return ret;
+@@ -150,7 +153,8 @@ static int rk808_rtc_set_time(struct device *dev, struct rtc_time *tm)
+ 	int ret;
+ 
+ 	dev_dbg(dev, "set RTC date/time %ptRd(%d) %ptRt\n", tm, tm->tm_wday, tm);
+-	gregorian_to_rockchip(tm);
++	if (!rk808_rtc->use_gregorian_calendar)
++		gregorian_to_rockchip(tm);
+ 	rtc_data[0] = bin2bcd(tm->tm_sec);
+ 	rtc_data[1] = bin2bcd(tm->tm_min);
+ 	rtc_data[2] = bin2bcd(tm->tm_hour);
+@@ -206,7 +210,8 @@ static int rk808_rtc_readalarm(struct device *dev, struct rtc_wkalrm *alrm)
+ 	alrm->time.tm_mday = bcd2bin(alrm_data[3] & DAYS_REG_MSK);
+ 	alrm->time.tm_mon = (bcd2bin(alrm_data[4] & MONTHS_REG_MSK)) - 1;
+ 	alrm->time.tm_year = (bcd2bin(alrm_data[5] & YEARS_REG_MSK)) + 100;
+-	rockchip_to_gregorian(&alrm->time);
++	if (!rk808_rtc->use_gregorian_calendar)
++		rockchip_to_gregorian(&alrm->time);
+ 
+ 	ret = regmap_read(rk808_rtc->regmap, rk808_rtc->creg->int_reg, &int_reg);
+ 	if (ret) {
+@@ -257,7 +262,8 @@ static int rk808_rtc_setalarm(struct device *dev, struct rtc_wkalrm *alrm)
+ 	dev_dbg(dev, "alrm set RTC date/time %ptRd(%d) %ptRt\n",
+ 		&alrm->time, alrm->time.tm_wday, &alrm->time);
+ 
+-	gregorian_to_rockchip(&alrm->time);
++	if (!rk808_rtc->use_gregorian_calendar)
++		gregorian_to_rockchip(&alrm->time);
+ 	alrm_data[0] = bin2bcd(alrm->time.tm_sec);
+ 	alrm_data[1] = bin2bcd(alrm->time.tm_min);
+ 	alrm_data[2] = bin2bcd(alrm->time.tm_hour);
+@@ -385,6 +391,10 @@ static int rk808_rtc_probe(struct platform_device *pdev)
+ 	if (rk808_rtc == NULL)
+ 		return -ENOMEM;
+ 
++	/* The CloudBook Air's stock Android uses Gregorian dates on RK809. */
++	rk808_rtc->use_gregorian_calendar = rk808->variant == RK809_ID &&
++		of_machine_is_compatible("zte,ecloudbook-air-24rtw");
++
+ 	switch (rk808->variant) {
+ 	case RK809_ID:
+ 	case RK817_ID:

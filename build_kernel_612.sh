@@ -70,6 +70,7 @@ apply_patch_if_missing 'mt7663s_w103d_vendor_disconnect_bss' "drivers/net/wirele
 apply_patch_if_missing 'mt7663s_w103d_sync_vendor_connect' "drivers/net/wireless/mediatek/mt76/mt7663s/mt7663s_w103d.c" "0013-mt76-mt7663s-w103d-tx-ampdu-and-sdio-throughput.patch"
 apply_patch_if_missing 'sbs_resolve_status' "drivers/power/supply/sbs-battery.c" "0014-power-supply-sbs-align-charging-led-status.patch"
 apply_patch_if_missing 'rockchip_dp_aux_done_probing' "drivers/gpu/drm/rockchip/analogix_dp-rockchip.c" "0014-drm-rockchip-probe-edp-panel-on-aux-bus.patch"
+apply_patch_if_missing 'use_gregorian_calendar' "drivers/rtc/rtc-rk808.c" "0015-rtc-rk808-use-gregorian-calendar-on-cloudbook-air.patch"
 
 # Keep storage, UART, USB Rootfs, PMIC and display support built into the kernel;
 # keep P4 peripheral drivers (=y/=m) aligned with config-6.12.117-cloudbook.

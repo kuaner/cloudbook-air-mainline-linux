@@ -9,6 +9,7 @@
 #     System.map-<kver>
 #     config-<kver>
 #     modules-<kver>.tar.gz
+#     rk3568-ecloudbook-air-24rtw-v30-emmc.dtb (7.3 only)
 #     boot_linux_{612,73}_v29_emmc.img
 #     boot_linux_{612,73}_v28_usb.img
 #     SHA256SUMS
@@ -123,6 +124,9 @@ tar --exclude="lib/modules/$KVER/build" --exclude="lib/modules/$KVER/source" -C 
 cp "$OUT_DIR/arch/arm64/boot/Image" "$ADIR/Image-$KVER"
 if [[ -f "$OUT_DIR/System.map" ]]; then cp "$OUT_DIR/System.map" "$ADIR/System.map-$KVER"; fi
 cp "$OUT_DIR/.config" "$ADIR/config-$KVER"
+if [[ "$VER" == 7.3 ]]; then
+    cp "$OUT_DIR/arch/arm64/boot/dts/rockchip/$DTS_NAME.dtb" "$ADIR/$DTS_NAME-v30-emmc.dtb"
+fi
 
 (
     cd "$ADIR"

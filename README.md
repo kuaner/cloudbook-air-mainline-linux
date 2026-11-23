@@ -51,7 +51,7 @@
 ├── mainline-6.12/
 │   ├── config-6.12.117-cloudbook          # 已验证的 Linux 6.12.117 内核配置
 │   ├── rk3568-ecloudbook-air-24rtw*.dts   # 分层演进 DTS 源码（最终入口为 v30-charging-led.dts）
-│   ├── patches/                           # 完整内核补丁序列 (0001 ~ 0014)
+│   ├── patches/                           # 完整内核补丁序列 (0001 ~ 0015)
 │   ├── README.md & TESTPLAN.md            # 6.12 构建与验收边界说明
 ├── docs/
 │   ├── board-profile.md                   # 硬件事实源与外设状态矩阵
@@ -113,7 +113,7 @@ scripts/pack_linux_artifacts.sh 7.3
 ```
 
 脚本会自动同步 `mainline-6.12/rk3568-ecloudbook-air-24rtw*.dts`、注册默认板型与 USB 试机两个
-DTB、按需应用 `mainline-6.12/patches/0001`~`0014`（跳开诊断性 `0002` 与已被 `v23`
+DTB、按需应用 `mainline-6.12/patches/0001`~`0015`（跳开诊断性 `0002` 与已被 `v23`
 替代的 `0004`），并输出 `Image` 与两个 DTB。
 
 > rootfs 里的内核模块用 `scripts/rootfs-postprocess-debian13.sh` 重新生成，把
