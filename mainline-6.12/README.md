@@ -1,42 +1,40 @@
-# CloudBook Air Linux 6.12 最小启动候选
+# CloudBook Air Linux 6.12.117 LTS 移植基线
 
-## 目标
-
-第一阶段只要求 UART 可诊断、内核挂载 USB `ROOTFS`、进入 Armbian 控制台，并具备基础输入和 USB 网络条件。eDP、音频、摄像头、PD 和 Wi-Fi 不作为首次启动的验收前提。
-
-## 源码与输出
-
-- 源码：`linux-6.12`，版本 `6.12.117`。
-- 板级 DTS：`mainline-6.12/rk3568-ecloudbook-air-24rtw.dts`。
-- 独立构建目录：`kernel_build/out-6.12`，不覆盖 6.18 的 `kernel_build/out`。
-- 构建入口：工作区根目录 `build_kernel_612.sh`。
-- 构建日志：`logs/build-6.12-minimal-20261112.log`。
-
-首版配置把 UART、EXT4、USB 存储、xHCI/EHCI/OHCI、eMMC、I2C、RK8xx PMIC、USB 输入和 RTL8152 网络支持内置到内核，避免挂载 Rootfs 前依赖模块目录。已保存并应用 `patches/0001-r8152-add-sr9900-id.patch`，仅为现有 CoreChips SR9900（0fe6:9900）添加 r8152 设备 ID。该补丁有参考真机测试，但在本机 6.12 候选中仍需重新验证；首测仍建议准备 AX88179 或 RTL8153 网卡作为备选。
+6.12.117 已完成内屏、基本外设、MT7663S 网络和 Hantro H.264 硬解移植。最小点亮过程和部分验收边界见 [早期实机记录](../docs/progress.md)。日常 Debian 13 i3 镜像见 [7.3.5 构建](../mainline-7.3/README.md)。
 
 ## 构建
 
+在 Linux 构建环境安装 LLVM 工具链、`make`、`bc`、`bison`、`flex`、`libssl-dev`、`libelf-dev`、`device-tree-compiler`、`python3`、`kmod`、`u-boot-tools` 和 `zstd`。从仓库根目录执行：
+
 ```bash
-./build_kernel_612.sh
+curl -fLO https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.117.tar.xz
+mkdir -p linux-6.12
+tar -xf linux-6.12.117.tar.xz -C linux-6.12 --strip-components=1
+BUILD_MODULES=1 ./build_kernel_612.sh
+./scripts/pack_linux_artifacts.sh 6.12
 ```
 
-该命令只读取源码并写本地构建目录，不连接或刷写设备。重新运行会保留并增量使用 `kernel_build/out-6.12/.config`；需要完全重建时，应另行备份后清理该独立输出目录。
+`build_kernel_612.sh` 默认使用 `rk3568-ecloudbook-air-24rtw-v30-charging-led.dts`。省略 `BUILD_MODULES=1` 时只构建内核和 DTB。构建使用 `kernel_build/out-6.12/`，首次从仓库内核配置初始化，后续复用该目录中的 `.config`。
 
-## 验收边界
+打包需要 `artifacts/extracted_resource.img` 和 `artifacts/initramfs-6.12.117-cloudbook-emmc.img`。前者从本机原厂 `boot_b` 提取，后者使用 6.12 的手工 initramfs。[本地输入和早期产物记录](../docs/LOCAL_ARTIFACTS_AND_NEXT_STEPS.md)
 
-首版只构建 Image 和 DTB，不构建完整模块包；启动所需的存储、串口、USB 和输入支持均已内置。后续外设阶段再按实际驱动选择性构建和安装模块，避免通用 defconfig 产生大量无关模块。
+`pack_linux_artifacts.sh 6.12` 固定输出 `boot_linux_612_v28_usb.img`（`ROOTFS`）、`boot_linux_612_v29_emmc.img`（`EMMC_ROOTFS`）和 `modules-6.12.117-cloudbook.tar.gz`。`v29_emmc` 是保留的文件名，eMMC 路径使用本次构建的默认板级 DTB。要单独重打 6.12 eMMC 镜像，可执行 `./build_boot_linux_612.sh`，默认输出 `artifacts/boot_linux_612_v30_emmc_rebuild.img`。
 
-生成 Image、DTB 和 boot.img 不等于真机启动成功。候选镜像必须先检查：
+6.12 的 eMMC 根盘按 `EMMC_ROOTFS` 卷标识别。历史安装曾覆盖 p20，当前双系统将 p20 留给 Android，Linux 根盘使用 p21。[双系统布局](../docs/P20_P21_DUAL_BOOT_PLAN.md)
 
-1. DTB 包含 `__symbols__`、`chosen` 和 `reboot_mode`；
-2. boot cmdline 使用 `console=ttyS2,115200n8` 和 `root=LABEL=ROOTFS`；
-3. 镜像小于 160 MiB 的 `boot_a` 分区；
-4. 本地 SHA-256 清单完整；
-5. UART 可用、Android B 保留，另行确认后才允许写入 `boot_a` 和重启。
+## Hantro 硬解基线
+
+6.12 的真机验证使用 GStreamer `v4l2codecs` 和 `xvimagesink` 播放 H.264。安装 `gstreamer1.0-plugins-bad`、`gstreamer1.0-x` 和 `parole` 后，可在桌面账户下为 Parole 指定 XVideo 输出：
+
+```bash
+xfconf-query -c parole -p /video/videosink -n -t string -s xvimagesink
+```
+
+早期实测的 1080p H.264 网络流在 `/dev/video1` 解码时，播放器进程占用约 47% CPU，同一样本在 VLC 软件解码时约 249%。7.3.5 的 HEVC 验收使用 VDPU346。[7.3.5 视频验收命令](../docs/USB_TEST_KIT_7.3.md#5-验收清单)
 
 ## 补丁基线与 6.12.117 重基
 
-`patches/` 中补丁的原始版本是在 `unifreq/linux-6.18.y` 源码树上生成的（见 `../docs/cloudbook-air-mainline/02-方案设计.md`），部分上下文引用了 6.14+/6.15+/6.16+ 才出现的代码，直接对纯净 `v6.12.117` 应用会失败。
+`patches/` 中补丁的原始版本是在 `unifreq/linux-6.18.y` 源码树上生成的（见[方案设计](../docs/cloudbook-air-mainline/02-方案设计.md)），部分上下文引用了 6.14+/6.15+/6.16+ 才出现的代码，直接对纯净 `v6.12.117` 应用会失败。
 
 现已按 6.12.117 的真实代码重基，并已用两条独立路径验证（`git apply` 与 `patch -p1` 均 100% 成功，产物树逐字节一致）：
 

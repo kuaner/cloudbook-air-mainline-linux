@@ -22,7 +22,9 @@ BootROM（熔断校验）
 
 关键 cmdline：`console=ttyFIQ0 androidboot.hardware=rk30board androidboot.verifiedbootstate=orange buildvariant=userdebug`。
 
-## 2. 分区（20 个 GPT 分区）
+## 2. 原厂 GPT（20 个分区）
+
+下面记录取证时的原厂布局。内置 Debian 部署后的 p20 和 p21 见 [双系统布局](P20_P21_DUAL_BOOT_PLAN.md)。
 
 | 分区 | 用途 |
 | :--- | :--- |

@@ -17,20 +17,33 @@
 
 下文 2026-11-21 和 2026-11-22 的测试记录还引用了早期镜像 `boot_linux_73_v28_usb.img`、`rootfs-7.3.5-cloudbook.ext4` 及 `rootfs-7.3.5-cloudbook.tar.zst`。
 
-## 2. 制作 U 盘（Linux 主机）
+## 2. 制作 U 盘
 
-先 `lsblk -dpo NAME,SIZE,MODEL` 核对盘符，**千万别写错主机硬盘**。
+使用专用 U 盘，容量至少 8 GiB。常见标称 8 GB 的 U 盘容量不足以写入整盘镜像。
 
-### 方式 A　把镜像写到专用 U 盘
+### 方式 A　写入整盘 ext4 镜像
 
-本机使用整盘 ext4。整盘写入将覆盖 U 盘上原有的系统和文件。先卸载目标 U 盘上的文件系统，再从镜像输出目录运行以下命令。
+本机使用整盘 ext4。整盘写入将覆盖 U 盘上原有的系统和文件。先核对设备并卸载目标 U 盘上的文件系统，再从镜像输出目录执行命令。若手中是压缩版，先用 `zstd -d` 解压。
+
+Linux 主机用 `lsblk -dpo NAME,SIZE,MODEL` 确认 U 盘盘符。
 
 ```bash
 sudo dd if=rootfs-7.3.5-cloudbook-usb.ext4 of=/dev/sdX bs=4M status=progress conv=fsync
 sudo blkid -p /dev/sdX  # LABEL="ROOTFS"，TYPE="ext4"
 ```
 
-### 方式 B：解 tar（建议至少 8 GB）
+macOS 主机用 `diskutil list external physical` 确认 U 盘编号。把下方 `N` 换为实际编号：
+
+```bash
+diskutil unmountDisk /dev/diskN
+sudo dd if=rootfs-7.3.5-cloudbook-usb.ext4 of=/dev/rdiskN bs=4m
+sync
+diskutil eject /dev/diskN
+```
+
+### 方式 B　从 Linux 主机解包到 U 盘分区
+
+用 `lsblk -dpo NAME,SIZE,MODEL` 核对目标盘符并卸载 U 盘。以下命令会重建其分区表，需要 `parted`、`e2fsprogs` 和 `zstd`。
 
 ```bash
 sudo parted -s /dev/sdX mklabel gpt
@@ -50,7 +63,7 @@ sudo blkid /dev/sdX1   # 应显示 LABEL="ROOTFS"
 
 ## 3. 写入 `boot_a` 并首次启动
 
-先备份当前的 `boot_a` 和 `misc`，核对 B 槽的 successful 标志。将 `boot_linux_73_v30_auto.img` 写入 `boot_a` 后读回校验。基于设备当时的 `misc` 更新 A 槽试启动次数为 3，保留其他启动数据，读回校验后再重启。设备恢复 Android B 时可使用普通网络 ADB。已写入 `boot_linux_73_v30_auto.img` 且当前选择 A 槽时，插着带 `ROOTFS` 卷标的 U 盘重启即可再次试跑。
+首次安装按 [写入 A 槽](FLASHING_GUIDE.md#3-首次写入-a-槽)操作。已刷入同批构建的 `boot_linux_73_v30_auto.img` 且当前选择 A 槽时，插着带 `ROOTFS` 卷标的 U 盘重启即可再次试跑。
 
 ## 4. 首次启动预期
 
@@ -63,7 +76,7 @@ sudo blkid /dev/sdX1   # 应显示 LABEL="ROOTFS"
 | `kuaner`（sudo） | `kuaner`，可由构建时的 `CLOUDBOOK_LOGIN_PASSWORD` 覆盖 |
 | `root` | `cloudbook` |
 
-**首次登录后请改密码**：`passwd`。
+首次登录后运行 `passwd` 修改当前用户密码，再用 `sudo passwd root` 修改 root 初始密码。
 
 登录后，点顶部网络图标选择 Wi-Fi。通用镜像不含个人 Wi-Fi 密码。
 
@@ -78,13 +91,23 @@ sudo blkid /dev/sdX1   # 应显示 LABEL="ROOTFS"
 | `Win+Shift+X` / `Win+Shift+E` | 锁屏 / 打开电源菜单 |
 | `Ctrl+空格` / `Print` | 切换中文输入 / 截图到 `~/Pictures` |
 
-关机可按 `Win+Shift+E`，选「关机」后确认。登录界面也可用右上角的红色电源按钮。按 `Win+Shift+X` 或从合盖休眠唤醒后，在屏幕中央输入 Debian 登录密码，按 `Enter` 或点「解锁」。
+关机可按 `Win+Shift+E`，选「关机」后确认。登录界面也可用右上角的电源按钮。按 `Win+Shift+X` 或从合盖休眠唤醒后，在屏幕中央输入 Debian 登录密码，按 `Enter` 或点「解锁」。
 
 已部署到 eMMC p21 的双系统可以从 Debian 的电源菜单选择「安卓」。在 Android 中打开「切换系统」可以重启回 Debian。[图形切换与授权步骤](../tools/system-switcher/README.md)
 
-时区为 `Asia/Shanghai`。联网后 `systemd-timesyncd` 依次尝试阿里云、Cloudflare 与 Debian 池的 NTP 源。运行 `timedatectl timesync-status` 可查看应答服务器和收到的数据包数；NTP 全部不可达时时钟保持不动，不再有额外的 HTTPS 校时服务。
+时区为 `Asia/Shanghai`。联网后 `systemd-timesyncd` 依次尝试阿里云、Cloudflare 与 Debian 池的 NTP 源。运行 `timedatectl timesync-status` 可查看应答服务器和收到的数据包数；各 NTP 源均不可达时，系统会继续使用本地时钟，等待后续联网同步。
 
 软件源使用阿里云 Debian 镜像。主仓库、常规更新和安全更新分别使用 `trixie`、`trixie-updates`、`trixie-security`，由 Debian 归档密钥验证签名。
+
+### 安装图形应用
+
+该桌面是 Debian 13 `arm64` 上的 i3/X11，可以安装 Debian 仓库中的应用，也可以安装供应商发布的、依赖与 Debian 13 兼容的 Linux ARM64 `.deb`。使用 `dpkg --print-architecture` 确认架构，用 `apt` 安装以解析依赖。安装后按 `Win+D` 查找应用。
+
+```bash
+sudo apt update
+sudo apt install mousepad                   # Debian 仓库中的图形文本编辑器
+sudo apt install ./PACKAGE_linux_arm64.deb   # 替换为本地软件包的实际文件名
+```
 
 ## 5. 验收清单
 
@@ -110,7 +133,7 @@ gst-launch-1.0 filesrc location=/path/sample.hevc ! h265parse ! \
 
 # 电源
 cat /sys/class/power_supply/*/online
-systemctl suspend                         # 合盖/唤醒回归
+systemctl suspend                         # 手动休眠及唤醒，合盖另测
 
 # ZRAM（4 GB 机器，默认取内存 50%）
 zramctl

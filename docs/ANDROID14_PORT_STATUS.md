@@ -3,7 +3,7 @@
 > **日期**：2026-11-20  
 > **目标机**：ZTE / 中国移动 CloudBook Air 14" `CT2000-24RTW`（主板 `W620D V12.0`，RK3568B2，4 GB / 32 GB）  
 > **目标布局**：A 槽 = Android 14，B 槽 = 原厂 Android 11；**B 槽不改**。  
-> **当前结论**：内核和 `boot.img` 已完成；`super` 的 A 逻辑分区、vendor overlay、真机验证还没完成。
+> **实验状态**：内核和 `boot.img` 已完成。`super` 的 A 逻辑分区、vendor overlay、真机验证还未完成。此方案与 Debian 共用 A 槽，日用双系统见 [7.3.5 刷机手册](FLASHING_GUIDE.md)。
 
 ---
 
@@ -97,7 +97,7 @@ python3 scripts/pack_boot_android14.py \
 | :--- | :--- |
 | p11 / p12 | `boot_a` / `boot_b`：只放 kernel + ramdisk + DTB |
 | p19 | **一个共享的 `super`（5.0 GiB）**：A/B 的 system/vendor/product/... 都是里面的逻辑分区 |
-| p20 | `userdata`（约 22 GB） |
+| p20 | `userdata`（原厂布局约 22 GiB，当前双系统实机为 8 GiB） |
 
 - Linux 只写 `boot_a` 能启动，是因为它的 rootfs 在 U 盘/`userdata`，不依赖 `super`。
 - Android 14 的 system/vendor 在 `super` 的 A 逻辑分区里；**只写 `boot_a` 没有 Android 14 系统**。
@@ -184,7 +184,7 @@ adb reboot
 - 内屏 eDP 亮、USB 键盘/触控板可用。
 - `dmesg | grep -iE 'edp|panel|mt7663|btmtk|sc2021|bq25700|sbs'`
 - `uname -r`、`wm size`、`ip link`、`bluetoothctl show`、`cat /sys/class/power_supply/*/uevent`。
-- 失败：连续冷启动 3 次应回 B；或 `bootctl set-active-boot-slot 1` 切回 B。
+- 失败：A 槽试启动计数耗尽后应回 B；或 `bootctl set-active-boot-slot 1` 切回 B。
 - 还原 `boot_a`/`misc`：把 `factory_boot_a.img`/`factory_misc.img` `dd` 回对应分区。
 
 ### Phase 4：vendor overlay（Wi-Fi/BT/音频/电池）
@@ -220,7 +220,6 @@ adb reboot
 
 ---
 
-## 8. Linux 侧（与 Android 无关）
+## 8. Linux 侧
 
-上游 `0013` 已合入 `mainline-6.12/patches/` 和 `build_kernel_735.sh`；6.12 / 7.3 已用 0013 重编，
-`./rebuild_linux.sh` 一条命令重建内核、v29/v28 `boot.img`、modules。Android 14 的 6.1 内核没有套 0013。
+Android 14 实验使用独立的 Rockchip 6.1 BSP。当前 Debian 内核、桌面和配套 v30 通用镜像的构建见 [7.3.5 构建说明](../mainline-7.3/README.md)，6.12 构建见 [LTS 移植基线](../mainline-6.12/README.md)。

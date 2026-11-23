@@ -1,8 +1,7 @@
 # 板卡档案：ZTE CloudBook Air 14" (CT2000-24RTW) / W620D V12.0
 
-> **依据规程**：[`rk-linux-bringup-skill`](.agents/skills/rk-linux-bringup-skill/SKILL.md)  
 > **地位**：整机硬件事实源，每项标明证据级别、出处与验证状态。  
-> **最后更新**：2026-11-16  
+> **硬件基线记录**：2026-11-16。后续部署见 [p20/p21 双系统布局](P20_P21_DUAL_BOOT_PLAN.md)。
 
 ---
 
@@ -15,7 +14,7 @@
 | 主板型号/丝印 | W620D V12.0 | L3 | `resource.img` DTB 名称、主板丝印 | 已验证 |
 | SoC 型号 | Rockchip RK3568B2 (4× Cortex-A55 @ 1.99GHz) | L2 / L3 | `/proc/cpuinfo` / `extracted_factory.dts` | 已验证 |
 | 内存 | 4GB LPDDR4 (4096MB @ 1560MHz) | L2 | U-Boot DDR 初始化日志 | 已验证 |
-| 内部存储 | 32GB eMMC (HS200, 20 个标准 GPT 分区) | L2 | `dmesg` / `lsblk` / `partitions.txt` | 已验证 |
+| 内部存储 | 32GB eMMC (HS200，原厂 20 个 GPT 分区) | L2 | `dmesg` / `lsblk` / `partitions.txt` | 已验证 |
 | 外置扩展 | 无 MicroSD/TF 卡槽；通过 USB-A 外接 USB 3.0 U 盘 | L1 / L2 | 实机外观检查 / `lsblk` | 已验证 |
 | 原厂系统 | Android 11 (V2.24.30P6-20241112, 运行在 Slot B) | L2 | `getprop.txt` | 已验证 |
 | 原厂内核 | Linux 4.19.193 (`#439 SMP PREEMPT`) | L2 | `extracted_kernel.bin` / `dmesg.txt` | 已验证 |
@@ -61,7 +60,7 @@
 | U-Boot 串口中断 | `Ctrl+C`（U-Boot 字符串 `Hit key to stop autoboot('CTRL+C')`，`bootdelay=0`，需上电瞬间连按） | L3 | `uboot.img` 字符串 | 待真机复验 |
 | U-Boot 无 UART 入口 | ADC `volumeup-key`（`label = "recovery"`）按住开机 → recovery/download | L3 | `uboot.img` DTB `adc-keys` | 待真机验证 |
 | OTG 刷机接口 | **Type-C 旁边的 USB-A 口**（内部物理连接 `dwc3@fcc00000` OTG 控制器） | L3 | `uboot_embedded.dts` 逆向 | 已验证 |
-| A/B 槽引导回滚 | U-Boot 支持标准 Android `tries_remaining`（试引导上限 3 次，耗尽自动回退 Slot B） | L2 / L3 | `switch_ab_slot.py` / 实机回退验证 | 已验证 |
+| A/B 槽引导回滚 | U-Boot 支持标准 Android `tries_remaining`（本项目初始计数为 3，耗尽时回退到可启动的 B 槽） | L2 / L3 | `switch_ab_slot.py` / 实机回退验证 | 已验证 |
 
 ---
 
@@ -92,5 +91,5 @@
   - 严禁修改当前工作的 `boot_b` 原厂 Android 分区；
 - **测试写入区**：
   - 所有测试只在 `boot_a` 分区进行；
-  - 写入 `misc` 时必须保留 3 次试启动自动回退机制（`priority = 15, tries_remaining = 3, successful_boot = 0`）；
+  - 写入 `misc` 时必须保留 B 槽并设置 A 槽初始试启动计数（`priority = 15, tries_remaining = 3, successful_boot = 0`）；
 - **全量备份清单**：保存在 `factory_backup/`（`mmcblk2_first8M_idbloader_gpt.img`, `uboot_a/b.img`, `trust_a/b.img`, `misc_restore_slot_b.img`, `boot_b.img` 160MB）。

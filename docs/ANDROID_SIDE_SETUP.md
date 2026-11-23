@@ -1,14 +1,13 @@
 # eCloudBook Air Android Side Setup
 
-ADB and switcher last verified: 2026-11-23
+ADB and switcher last verified on 2026-11-23. Desktop, keymaps and vendor changes below record the configuration of the test unit. The current dual-boot layout keeps Android `/data` on p20. [Partition layout](P20_P21_DUAL_BOOT_PLAN.md)
 
 ## Device
 
 - Model: `eCloudBook Air 24RTW`
 - Device: `rk3568_r_w600d2`
 - Android: 11
-- Serial: `291005950753`
-- Network ADB: TCP port `5555`. Replace the IP in the examples with the device's current address.
+- Network ADB: TCP port `5555`. Set `device` below to the laptop’s current address, including the port.
 - Root: available via `su 0`
 
 ## ADB persistence
@@ -22,16 +21,16 @@ properties:
 | `persist.internet_adb_enable` | `1` | set `service.adb.tcp.port=5555` and restart `adbd` |
 | `persist.vendor.adbmode.enable` | `1` | vendor switch that prevents the boot script from stopping `adbd` |
 
-Applied values:
+From a host that already has an authorized ADB connection, set `device` to the serial shown by `adb devices -l`. The example below uses a TCP connection.
 
 ```bash
-adb -s 192.168.123.128:5555 shell su 0 setprop persist.sys.adb_enable 1
-adb -s 192.168.123.128:5555 shell su 0 setprop persist.internet_adb_enable 1
-adb -s 192.168.123.128:5555 shell su 0 setprop persist.vendor.adbmode.enable 1
-adb -s 192.168.123.128:5555 shell su 0 setprop persist.sys.usb.config adb
-adb -s 192.168.123.128:5555 shell settings put global adb_enabled 1
-adb -s 192.168.123.128:5555 shell settings put global development_settings_enabled 1
-adb -s 192.168.123.128:5555 shell settings put global adb_wifi_enabled 1
+device=YOUR_DEVICE_IP:5555
+adb -s "$device" shell su 0 setprop persist.sys.adb_enable 1
+adb -s "$device" shell su 0 setprop persist.internet_adb_enable 1
+adb -s "$device" shell su 0 setprop persist.vendor.adbmode.enable 1
+adb -s "$device" shell su 0 setprop persist.sys.usb.config adb
+adb -s "$device" shell settings put global adb_enabled 1
+adb -s "$device" shell settings put global development_settings_enabled 1
 ```
 
 Runtime result before reboot:
@@ -44,7 +43,7 @@ service.adb.tcp.port=5555
 init.svc.adbd=running
 ```
 
-The Android switcher requires the RSA-authenticated form of this TCP listener.
+The Android switcher requires the RSA-authenticated form of this fixed TCP listener. Android’s separate Wireless debugging toggle can remain off.
 On this userdebug build, `ro.adb.secure=1` is loaded from `/data/local.prop`
 at boot. Both the host and the switcher use their own authorized public keys.
 The switcher connects to `127.0.0.1:5555` and uses the device's `su 0`.
@@ -66,13 +65,13 @@ ADB authorization must be reapplied after such a reset.
 Verification:
 
 ```bash
-adb connect 192.168.123.128:5555
+adb connect "$device"
 adb devices
-adb -s 192.168.123.128:5555 shell getprop persist.sys.adb_enable
-adb -s 192.168.123.128:5555 shell getprop persist.internet_adb_enable
-adb -s 192.168.123.128:5555 shell getprop persist.vendor.adbmode.enable
-adb -s 192.168.123.128:5555 shell getprop service.adb.tcp.port
-adb -s 192.168.123.128:5555 shell getprop ro.adb.secure  # 1 for the switcher
+adb -s "$device" shell getprop persist.sys.adb_enable
+adb -s "$device" shell getprop persist.internet_adb_enable
+adb -s "$device" shell getprop persist.vendor.adbmode.enable
+adb -s "$device" shell getprop service.adb.tcp.port
+adb -s "$device" shell getprop ro.adb.secure  # 1 for the switcher
 ```
 
 ## Desktop
@@ -86,10 +85,10 @@ Installed APK: `~/Downloads/aerial-standard.apk`
 Commands used:
 
 ```bash
-adb -s 192.168.123.128:5555 install -r ~/Downloads/aerial-standard.apk
-adb -s 192.168.123.128:5555 shell cmd package set-home-activity app.orchard.tv/.MainActivity
-adb -s 192.168.123.128:5555 shell cmd role add-role-holder android.app.role.HOME app.orchard.tv
-adb -s 192.168.123.128:5555 shell pm disable-user --user 0 com.android.provision
+adb -s "$device" install -r ~/Downloads/aerial-standard.apk
+adb -s "$device" shell cmd package set-home-activity app.orchard.tv/.MainActivity
+adb -s "$device" shell cmd role add-role-holder android.app.role.HOME app.orchard.tv
+adb -s "$device" shell pm disable-user --user 0 com.android.provision
 ```
 
 `com.android.provision` is disabled because its `DefaultActivity` has higher
@@ -98,7 +97,7 @@ priority for the HOME category.
 Verify:
 
 ```bash
-adb -s 192.168.123.128:5555 shell cmd package resolve-activity --brief \
+adb -s "$device" shell cmd package resolve-activity --brief \
   -a android.intent.action.MAIN -c android.intent.category.HOME
 ```
 
@@ -139,14 +138,14 @@ Host backup:
 Restore after a userdata reset:
 
 ```bash
-adb -s 192.168.123.128:5555 shell su 0 mount -o rw,remount /vendor
-adb -s 192.168.123.128:5555 push \
+adb -s "$device" shell su 0 mount -o rw,remount /vendor
+adb -s "$device" push \
   ~/Downloads/cloudbook-keylayout-backup/Generic.kl.data \
   /data/local/tmp/Generic.kl
-adb -s 192.168.123.128:5555 push \
+adb -s "$device" push \
   ~/Downloads/cloudbook-keylayout-backup/Vendor_258a_Product_0001.kl \
   /data/local/tmp/Vendor_258a_Product_0001.kl
-adb -s 192.168.123.128:5555 shell su 0 sh -c \
+adb -s "$device" shell su 0 sh -c \
   'mkdir -p /data/system/devices/keylayout; \
    cp /data/local/tmp/Generic.kl /data/system/devices/keylayout/Generic.kl; \
    cp /data/local/tmp/Vendor_258a_Product_0001.kl \
@@ -166,7 +165,7 @@ adb -s 192.168.123.128:5555 shell su 0 sh -c \
 Then reboot, or force the USB keyboard to reload:
 
 ```bash
-adb -s 192.168.123.128:5555 shell su 0 sh -c \
+adb -s "$device" shell su 0 sh -c \
   'echo -n 7-1 > /sys/bus/usb/drivers/usb/unbind; sleep 1; \
    echo -n 7-1 > /sys/bus/usb/drivers/usb/bind'
 ```
@@ -174,7 +173,7 @@ adb -s 192.168.123.128:5555 shell su 0 sh -c \
 Verify:
 
 ```bash
-adb -s 192.168.123.128:5555 shell dumpsys input | grep KeyLayoutFile
+adb -s "$device" shell dumpsys input | grep KeyLayoutFile
 ```
 
 The SINO keyboard should show
@@ -211,7 +210,7 @@ Packages that were already absent after the p20 reset and were not disabled:
 Install configuration:
 
 ```bash
-adb -s 192.168.123.128:5555 shell su 0 setprop persist.sys.custconf normal
+adb -s "$device" shell su 0 setprop persist.sys.custconf normal
 ```
 
 This is required because the modified AOSP installer routes install requests
@@ -256,9 +255,9 @@ installed as:
 The app must be launched once after install so it leaves the stopped state:
 
 ```bash
-adb -s 192.168.123.128:5555 install -r fnkeys.apk
-adb -s 192.168.123.128:5555 shell appops set com.kuaner.fnkeys SYSTEM_ALERT_WINDOW allow
-adb -s 192.168.123.128:5555 shell am start -n com.kuaner.fnkeys/.MainActivity
+adb -s "$device" install -r fnkeys.apk
+adb -s "$device" shell appops set com.kuaner.fnkeys SYSTEM_ALERT_WINDOW allow
+adb -s "$device" shell am start -n com.kuaner.fnkeys/.MainActivity
 ```
 
 ## Bluetooth MAC
@@ -285,9 +284,9 @@ Host backup: `~/Downloads/cloudbook-bdaddr.txt`
 Restore:
 
 ```bash
-adb -s 192.168.123.128:5555 push \
+adb -s "$device" push \
   ~/Downloads/cloudbook-bdaddr.txt /data/local/tmp/bdaddr
-adb -s 192.168.123.128:5555 shell su 0 sh -c \
+adb -s "$device" shell su 0 sh -c \
   'cp /data/local/tmp/bdaddr /data/misc/bluetooth/bdaddr; \
    chown bluetooth:bluetooth /data/misc/bluetooth/bdaddr; \
    chmod 660 /data/misc/bluetooth/bdaddr; \
@@ -309,8 +308,8 @@ correct HAL-specific `bdaddr` format; this has not been done.
 Verify:
 
 ```bash
-adb -s 192.168.123.128:5555 shell pm list packages -d --user 0
-adb -s 192.168.123.128:5555 shell getprop persist.sys.custconf
+adb -s "$device" shell pm list packages -d --user 0
+adb -s "$device" shell getprop persist.sys.custconf
 ```
 
 ## Re-enable / rollback
@@ -318,28 +317,28 @@ adb -s 192.168.123.128:5555 shell getprop persist.sys.custconf
 Re-enable a disabled package:
 
 ```bash
-adb -s 192.168.123.128:5555 shell pm enable --user 0 <package>
+adb -s "$device" shell pm enable --user 0 PACKAGE_NAME
 ```
 
 Restore an uninstalled system package:
 
 ```bash
-adb -s 192.168.123.128:5555 shell su 0 cmd package install-existing --user 0 <package>
+adb -s "$device" shell su 0 cmd package install-existing --user 0 PACKAGE_NAME
 ```
 
 Restore the original HOME selection:
 
 ```bash
-adb -s 192.168.123.128:5555 shell pm enable --user 0 com.android.provision
-adb -s 192.168.123.128:5555 shell cmd role remove-role-holder android.app.role.HOME app.orchard.tv
+adb -s "$device" shell pm enable --user 0 com.android.provision
+adb -s "$device" shell cmd role remove-role-holder android.app.role.HOME app.orchard.tv
 ```
 
 Disable network ADB:
 
 ```bash
-adb -s 192.168.123.128:5555 shell su 0 setprop persist.internet_adb_enable 0
-adb -s 192.168.123.128:5555 shell su 0 setprop persist.sys.adb_enable 0
-adb -s 192.168.123.128:5555 shell su 0 setprop persist.vendor.adbmode.enable 0
+adb -s "$device" shell su 0 setprop persist.internet_adb_enable 0
+adb -s "$device" shell su 0 setprop persist.sys.adb_enable 0
+adb -s "$device" shell su 0 setprop persist.vendor.adbmode.enable 0
 ```
 
 ## Notes and trade-offs

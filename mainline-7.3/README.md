@@ -26,26 +26,23 @@
    - Analogix RK3568 eDP 板级匹配与 BOE 面板时序。附加补丁 `0001-drm-analogix-dp-pass-lane-count-to-phy.patch` 在设置速率和训练电压时传入实际通道数，满足 Naneng PHY 的参数检查。
    - 附加补丁 `0002-drm-rockchip-skip-dirtyfb-on-cloudbook-air.patch` 让这块板连续扫描的 VOP2 帧缓冲省去局部重绘通知，针对 Xorg 绘制软件光标时反复等待垂直刷新的问题。使用者已确认 `#9` 的内屏光标恢复平滑。
    - 附加补丁 `0003-bluetooth-handle-unsupported-local-pairing-options.patch` 处理 MT7663S 在启动时拒绝可选 HCI 命令 `0x100c` 的情况，使初始化能够继续到共享芯片就绪通知。验证范围见[Wi-Fi 连接验证](../docs/USB_TEST_KIT_7.3.md#wi-fi-连接验证)。
+   - 附加 `0004-power-sc2021-charger-wakeup.patch`，并共用 `0014-power-supply-sbs-align-charging-led-status.patch`，处理充电器唤醒与 SBS 电量状态。
    - 两条主线构建共用 `0015-rtc-rk808-use-gregorian-calendar-on-cloudbook-air.patch`，让本机的 RK809 与原厂 Android 使用相同的 RTC 日期格式。
 
 ## 2. 复现
 
-```bash
-curl -fLO https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.3.5.tar.xz
-mkdir -p linux-7.3.5 && tar -xf linux-7.3.5.tar.xz -C linux-7.3.5 --strip-components=1
-cd linux-7.3.5
-git apply path/to/cloudbook-7.3.5-port.patch
-git apply path/to/0013-mt76-mt7663s-w103d-tx-ampdu-and-sdio-throughput.patch
-git apply path/to/0001-drm-analogix-dp-pass-lane-count-to-phy.patch
-git apply path/to/0002-drm-rockchip-skip-dirtyfb-on-cloudbook-air.patch
-git apply path/to/0003-bluetooth-handle-unsupported-local-pairing-options.patch
-git apply path/to/0015-rtc-rk808-use-gregorian-calendar-on-cloudbook-air.patch
+在 Debian 或 Ubuntu 构建环境安装编译和打包依赖。以下命令从仓库根目录运行。
 
-cp path/to/config-7.3.5-cloudbook .config
-make ARCH=arm64 LLVM=1 olddefconfig
-make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
-     Image rockchip/rk3568-ecloudbook-air-24rtw.dtb modules
+```bash
+sudo apt-get install clang lld llvm make bc bison flex libssl-dev libelf-dev \
+    device-tree-compiler python3 kmod zstd curl patch
+curl -fLO https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.3.5.tar.xz
+mkdir -p linux-7.3.5
+tar -xf linux-7.3.5.tar.xz -C linux-7.3.5 --strip-components=1
+BUILD_MODULES=1 ./build_kernel_735.sh
 ```
+
+脚本应用移植与后续板级补丁，同步分层 v30 设备树，生成 `Image`、DTB 和模块到 `kernel_build/out-7.3.5/`。首次构建用仓库中的 `config-7.3.5-cloudbook` 初始化，后续复用输出目录里的 `.config`。
 
 关键配置（已在 `config-7.3.5-cloudbook` 中）：
 
@@ -58,20 +55,23 @@ make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
 
 ## 3. 产物
 
+`./scripts/pack_linux_artifacts.sh 7.3` 将内核产物放在 `artifacts/7.3/`。打包需 `artifacts/extracted_resource.img` 和匹配的 initramfs。若目录中没有 `initramfs-7.3.5-cloudbook-emmc.img`，脚本从同目录的 `rootfs-7.3.5-cloudbook.tar.zst` 提取 `/boot/initrd.img-7.3.5-cloudbook`。
+
 | 文件 | 说明 |
 | :--- | :--- |
-| `Image-7.3.5-cloudbook` | 7.3.5 + 上述补丁 |
-| `modules-7.3.5-cloudbook.tar.gz` | 767 个模块，目录 `lib/modules/7.3.5-cloudbook` |
-| `rk3568-ecloudbook-air-24rtw-v29.dtb` | eMMC 版（`root=LABEL=EMMC_ROOTFS`） |
-| `rk3568-ecloudbook-air-24rtw-v28-usb.dtb` | U 盘版（`root=LABEL=ROOTFS`） |
-| `boot_linux_73_v29_emmc.img` / `..._v28_usb.img` | Android Boot Image v2，已按 w620d 板型条目打包 |
+| `Image-7.3.5-cloudbook`、`config-7.3.5-cloudbook`、`System.map-7.3.5-cloudbook` | 内核、构建配置和符号表 |
+| `modules-7.3.5-cloudbook.tar.gz` | 完整模块树，安装目录 `lib/modules/7.3.5-cloudbook` |
+| `rk3568-ecloudbook-air-24rtw-v30-emmc.dtb` | 通用桌面引导镜像的板级 DTB 输入 |
+| `boot_linux_73_v30_emmc.img` / `boot_linux_73_v30_usb.img` | 固定从 `EMMC_ROOTFS` / `ROOTFS` 启动的单根盘镜像 |
+
+日常刷机使用第 7 节生成的 `boot_linux_73_v30_auto.img` 及同批根镜像。v28/v29 文件名见于早期试跑记录。
 
 ## 4. 与 6.12 版本的差异
 
 | 项 | 6.12 主线 | 7.3.5 |
 | :--- | :--- | :--- |
 | HEVC 硬解 | ❌ | VDPU346，已核对 1080p30 H.264 和 HEVC 样本的解码内容 |
-| VP9 硬解 | ❌（Hantro 无 VP9 on RK3568） | ❌（当前未包含；可补，见 `../docs/VIDEO_DECODE_7X_RESEARCH.md` 第 7 节） |
+| VP9 硬解 | ❌（Hantro 无 VP9 on RK3568） | ❌（当前未包含，见 [VP9 研究](../docs/VIDEO_DECODE_7X_RESEARCH.md#7-vp9-可行性下游补丁链)） |
 | eDP | Naneng PHY + Analogix 与 AUX 面板补丁 | Naneng PHY、RK3568 板级匹配与链路训练通道数修复 |
 | 电源 | 自研 API 适配 | `fwnode` / `get_by_reference` 新 API |
 | DTS 基文件 | `rk356x.dtsi` | `rk356x-base.dtsi`（编译一次通过） |
@@ -100,7 +100,7 @@ make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
 
 ## 7. Debian 桌面与 rootfs 构建
 
-`artifacts/7.3/` 下可复用的早期根镜像及配套引导文件如下。
+`artifacts/7.3/` 下的早期 `rootfs-7.3.5-cloudbook.tar.zst` 可用作新版构建的 Debian 13 LightDM 基础归档。它随同下表中的早期试跑产物保存在本地。
 
 | 文件 | 说明 |
 | :--- | :--- |
@@ -118,7 +118,7 @@ BUILD_MODULES=1 ./build_kernel_735.sh
 ./scripts/build-rootfs-735.sh artifacts/7.3/rootfs-7.3.5-cloudbook.tar.zst artifacts/7.3/desktop-kuaner
 ```
 
-构建需要可运行 ARM64 容器的 Docker、上述 Debian 13 LightDM 基础 tar 包，以及从本机导出的 `artifacts/extracted_resource.img`。桌面构建默认读取 `artifacts/7.3/` 下的内核、模块、配置和 v30 eMMC DTB。可通过 `CLOUDBOOK_LOGIN_PASSWORD` 设置初始密码，通过 `CLOUDBOOK_V30_INPUTS` 指定内核产物目录。重用旧镜像时，脚本会迁移 `cloudbook` 账户并保留其 UID/GID，将默认终端设为 Xfce Terminal，然后移除 `xterm`。
+构建需要可运行 ARM64 容器的 Docker、上述 Debian 13 LightDM 基础归档，以及[从本机导出的 `artifacts/extracted_resource.img`](../docs/FLASHING_GUIDE.md#1-核对机型和备份)。构建使用的基础归档和输出目录可通过两个位置参数指定。输出目录中的交付文件必须尚未存在。桌面构建默认读取 `artifacts/7.3/` 下的内核、模块、配置和 v30 eMMC DTB。可通过 `CLOUDBOOK_LOGIN_PASSWORD` 设置初始密码，通过 `CLOUDBOOK_V30_INPUTS` 指定内核产物目录。重用旧镜像时，脚本会迁移 `cloudbook` 账户并保留其 UID/GID，将默认终端设为 Xfce Terminal，然后移除 `xterm`。
 
 | 产物 | 用途 |
 | --- | --- |
@@ -129,7 +129,7 @@ BUILD_MODULES=1 ./build_kernel_735.sh
 
 引导镜像启用 Plymouth CloudBook Air 动画并隐藏内核企鹅。按 `Esc` 可查看启动信息。LightDM 登录和 Light Locker 解锁共用东京夜景、居中的密码卡片，以及与桌面 Polybar 同样的日期、时间和电源图标样式。顶栏的 `cloudbook` 标识按整条面板居中。从 Debian 桌面切换到 Android 时，打开电源菜单并选择「安卓」。[双系统切换说明](../tools/system-switcher/README.md)
 
-制作同配置的本地根镜像时，把自己设备 `vendor_b` 的 `/etc/firmware/WIFI_RAM_CODE_MT7663.bin` 和 `mt7663_patch_e2_hdr.bin` 一起放入构建环境的 `/inputs/firmware/7.3.5-cloudbook/`，也可用 `MT7663_VENDOR_FIRMWARE_DIR` 指定目录。`scripts/rootfs-postprocess-debian13.sh` 按驱动所需文件名安装这两个文件。省略版本目录与覆盖变量时，脚本使用 `/inputs/firmware/` 中原有的发行版固件。
+将本机 Android `vendor_b` 下 `etc/firmware/` 的 `WIFI_RAM_CODE_MT7663.bin` 与 `mt7663_patch_e2_hdr.bin` 放入仓库的 `artifacts/firmware/7.3.5-cloudbook/`。Docker 脚本将其映射到 `/inputs/firmware/7.3.5-cloudbook/`，后处理按驱动所需的文件名安装。没有版本目录时，后处理查找 `artifacts/firmware/` 下的 `mt7663_n9_v3.bin` 和 `mt7663pr2h.bin`。
 
 ### 双系统 RTC
 
@@ -150,10 +150,10 @@ BUILD_MODULES=1 ./build_kernel_735.sh
 VDPU346 系列合入主线后，可直接去掉补丁中 1~7 号提交，仅保留板级驱动补丁；届时把基线与上游同步即可。
 
 
-### 7.3.5 #10 的 v30 电源改动
+## 9. 历史记录：7.3.5 #10 电源候选
 
 `build_kernel_735.sh` 将上游 v30 的 SC2021 充电器中断唤醒、SBS 电量状态与充电指示灯配置带到 7.3。USB 设备树继承 v30，并将根盘卷标设为 `ROOTFS`。eMMC 版本使用 `EMMC_ROOTFS`。
 
 本次候选产物在 `artifacts/7.3/candidates/build10-v30/`。`boot_linux_73_v30_usb_build10.img` 适用于从 U 盘取根文件系统的配置，启动镜像由 eMMC A 槽加载。两套镜像沿用本机原厂资源模板与已验证的 initramfs。已核对 27 个 RSCE 条目。#10 曾在 ARM64 QEMU 中启动 Xfce，随后用同一内核验证了当前 i3 登录、Rofi 应用菜单和联网校时。上机前的实测基线为 #9，内屏 1920×1200@60、Panfrost、5 GHz 和 UPower 电池均已确认。#10 的充电灯、休眠唤醒和热重启表现仍需板上验证。
 
-这两个 build10 镜像仍使用 `scripts/initramfs-6.12.117/init` 手工 initramfs。重新构建 7.3 根镜像后改由 Debian `initramfs-tools` 生成 `/boot/initrd.img-7.3.5-cloudbook`，`root=LABEL=` 由发行版 initrd 的 local 脚本解析；打包时 `scripts/pack_linux_artifacts.sh` 会从 rootfs tarball 自动取出该文件。
+当时的 build10 镜像使用 `scripts/initramfs-6.12.117/init` 手工 initramfs。重新构建 7.3 根镜像后改由 Debian `initramfs-tools` 生成 `/boot/initrd.img-7.3.5-cloudbook`，`root=LABEL=` 由发行版 initrd 的 local 脚本解析；打包时 `scripts/pack_linux_artifacts.sh` 会从 rootfs tarball 自动取出该文件。

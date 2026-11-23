@@ -6,24 +6,26 @@
 
 ---
 
-> **想直接给同款机器刷机？** 请直接阅读保姆级分步操作手册：**[docs/FLASHING_GUIDE.md](docs/FLASHING_GUIDE.md)**（涵盖：前置校验与冷备份 → 成品包/从零编译路线 → U 盘免损首测 → 内置 eMMC 迁移 → 桌面与硬件解码配置 → 救砖/还原 Android）。
+- 备份设备、制作试跑 U 盘、写入 A 槽和部署到 p21。[7.3.5 刷机与部署](docs/FLASHING_GUIDE.md)
+- 查看构建所需输入、生成文件和真机验证范围。[7.3.5 内核与 Debian 桌面构建](mainline-7.3/README.md)
+- 使用 i3 桌面。[快捷键、关机、锁屏与 Wi-Fi](docs/USB_TEST_KIT_7.3.md#4-首次启动预期) · [图形应用安装](docs/USB_TEST_KIT_7.3.md#安装图形应用)
+- 在电源菜单切换系统、构建 APK 和配置 ADB 授权。[Debian 与 Android 图形切换](tools/system-switcher/README.md)
+- 维护与排查。[6.12 LTS 移植基线](mainline-6.12/README.md) · [OTG 恢复](docs/OTG_RECOVERY.md) · [移植进度](docs/progress.md)
 
-- [7.3.5 桌面构建、启动镜像与电源验证范围](mainline-7.3/README.md)
-- [常用快捷键、关机、锁屏与 Wi-Fi](docs/USB_TEST_KIT_7.3.md#4-首次启动预期)
-- [Debian 与 Android 图形切换、APK 构建与 ADB 授权](tools/system-switcher/README.md)
+## 一、 启动与分区
 
-## 一、 架构亮点与安全原则
+本机保留原厂签名的 `idbloader`、U-Boot 和 Trust，Linux 内核通过原厂 U-Boot 加载。
 
-本机已启用硬件熔断安全启动（`fuse.programmed=1`、`androidboot.secureboot=1`），`idbloader`（`RKSS`）与 `uboot_a/b`、`trust_a/b` 均带有硬件/RSA-2048 签名，但原厂 U-Boot 对 `boot_a`/`boot_b` 不拦截未签名内核。因此本项目采用 **“保留原厂签名 Bootloader，双槽独立共存”** 的零变砖架构：
-
-* **Slot B (`boot_b`, `/dev/mmcblk0p12`)**：完整保留原厂 Android 11（可随时回退或一键还原）。
-* **Slot A (`boot_a`, `/dev/mmcblk0p11`)**：运行以 Android Boot Image v2 打包的主线 Linux `6.12.117-cloudbook` 或 `7.3.5-cloudbook`。
-* **双系统分区**：p20 保留原厂 Android 的 `userdata`，p21 `rootfs`（`LABEL=EMMC_ROOTFS`）存放 Debian 13 ARM64 桌面。U 盘试跑使用 `LABEL=ROOTFS`。[实机分区与迁移记录](docs/P20_P21_DUAL_BOOT_PLAN.md)
-* **绝对红线**：严禁向 eMMC 前 8 MiB (`idbloader`)、`uboot_a/b`、`trust_a/b`、`security` 写入未签名开源固件；Type-C 旁边的 **USB-A 接口** 物理连接 `dwc3@fcc00000` OTG（唯一 `Rockusb`/`UMS` 刷机口）。
+- **A 槽** `boot_a`（`/dev/mmcblk0p11`）存放 Linux 内核、initramfs 和设备树。
+- **B 槽** `boot_b`（`/dev/mmcblk0p12`）与 `super` 中的 B 槽逻辑分区提供原厂 Android 11。
+- **双系统数据**。p20 `userdata` 供 Android 使用，p21 `rootfs`（`LABEL=EMMC_ROOTFS`）存放 Debian。v30 通用引导镜像优先使用卷标为 `ROOTFS` 的试跑 U 盘。[实机布局](docs/P20_P21_DUAL_BOOT_PLAN.md)
+- **刷机边界**。保留原厂签名链的 eMMC 前 8 MiB、`security`、`uboot_a/b`、`trust_a/b`。Type-C 旁的 USB-A 是 Rockusb/UMS 刷机口。写入 `boot_a` 或 `misc` 前先备份并验证 B 槽能启动。[刷机手册](docs/FLASHING_GUIDE.md)
 
 ---
 
 ## 二、 硬件支持矩阵（Linux `6.12.117-cloudbook`）
+
+此表记录 6.12 的板级基线。7.3.5 的内屏、网络、视频解码和电源验收见 [7.3.5 真机验证范围](mainline-7.3/README.md#5-真机验证范围)。
 
 | 子系统 | 硬件芯片 / 规格 | 当前状态 | 关键技术方案 |
 | :--- | :--- | :--- | :--- |
@@ -48,10 +50,11 @@
 ├── README.md                              # 项目总览与快速复现指南
 ├── LICENSES_AND_COPYRIGHT.md              # 版权与闭源固件合规甄别清单（必读）
 ├── .gitignore                             # 严格隔离内核树、备份与闭源二进制
+├── mainline-7.3/                          # 7.3.5 适配补丁、配置与构建说明
 ├── mainline-6.12/
 │   ├── config-6.12.117-cloudbook          # 已验证的 Linux 6.12.117 内核配置
 │   ├── rk3568-ecloudbook-air-24rtw*.dts   # 分层演进 DTS 源码（最终入口为 v30-charging-led.dts）
-│   ├── patches/                           # 完整内核补丁序列 (0001 ~ 0015)
+│   ├── patches/                           # 内核补丁序列 (0001 ~ 0015)
 │   ├── README.md & TESTPLAN.md            # 6.12 构建与验收边界说明
 ├── docs/
 │   ├── board-profile.md                   # 硬件事实源与外设状态矩阵
@@ -74,75 +77,20 @@
 ├── build_kernel_612.sh                    # 一键应用补丁并编译 Image / DTB（LLVM/Clang）
 ├── build_boot_linux_612.sh                # 一键打包 Android Boot Image v2 (boot_a)
 ├── pack_boot_linux.py                     # Rockchip RSCE + Android boot v2 打包脚本
-├── switch_ab_slot.py                      # 安全 A/B 槽切换与 3 次试引导回退 misc 生成器
-├── emmc_backup_and_migrate.sh             # 内置 eMMC 分区备份与 Rootfs 迁移脚本
-├── scripts/restore_factory_android.sh     # 一键还原原厂 Android 11 脚本
+├── switch_ab_slot.py                      # 离线 A/B 槽启动记录与 misc 镜像生成器
+├── emmc_backup_and_migrate.sh             # 早期 p20 布局的备份与迁移脚本
+├── scripts/restore_factory_android.sh     # 原厂 GPT 布局下的 Android 11 恢复脚本
 └── tools/serial_bridge.py                 # 串口调试桥接工具
 ```
 
 ---
 
-## 四、 从零构建与复现步骤
+## 四、 本地构建
 
-### 1. 准备源码与闭源前置件（本地，不入库）
-由于版权与体积限制，仓库不包含 Linux 源码与厂商二进制文件（详见 [LICENSES_AND_COPYRIGHT.md](LICENSES_AND_COPYRIGHT.md)）：
-1. 下载上游 **Linux `6.12.117`** 源码解压至 `./linux-6.12/`。
-2. 从你自己的原厂设备只读导出 `boot_b` 中的 `resource.img` 放到 `./artifacts/extracted_resource.img`。6.12 还需要手工准备 `initrd.img` 到 `./artifacts/initramfs-6.12.117-cloudbook-emmc.img`；7.3 的 initramfs 由 `scripts/rootfs-postprocess-debian13.sh` 用 Debian `initramfs-tools` 在 rootfs 内生成（`/boot/initrd.img-7.3.5-cloudbook`），打包时自动从 rootfs tarball 取出，不需要这一步。
-3. 如使用 Wi-Fi/蓝牙，请合法获取 MT7663 固件（`mt7663_n9_v3.bin`、`mt7663pr2h.bin`）安装至目标系统的 `/lib/firmware/mediatek/`。
+日用桌面按 [7.3.5 内核构建](mainline-7.3/README.md#2-复现)和[桌面镜像构建](mainline-7.3/README.md#7-debian-桌面与-rootfs-构建)执行。构建得到配套的 USB 根镜像、eMMC 根文件系统归档和 `boot_linux_73_v30_auto.img`。内核源码、基础 Debian 根文件系统、从自有设备导出的原厂 RSCE 资源模板及无线固件均为本地输入。[版权与固件来源](LICENSES_AND_COPYRIGHT.md)
 
-### 2. 编译内核、模块、DTB 与 boot.img
+维护 6.12 时使用 [6.12 构建入口](mainline-6.12/README.md#构建)。需要同时编译两代内核和打包固定根盘引导镜像时，可运行 `./rebuild_linux.sh`，具体文件名见 [7.3.5 产物](mainline-7.3/README.md#3-产物)和 [6.12 产物](mainline-6.12/README.md#构建)。
 
-一条命令重建 6.12 与 7.3（需要 `./linux-6.12` 和 `./linux-7.3.5` 两棵源码树）：
+## 五、 恢复 Android
 
-```bash
-./rebuild_linux.sh
-```
-
-它依次执行 `build_kernel_612.sh`、`build_kernel_735.sh`，再由
-`scripts/pack_linux_artifacts.sh` 生成 v29/v28 两个 `boot_a` 镜像、完整 modules 包、
-`Image`/`System.map`/`config`，并更新 `SHA256SUMS`。
-
-只重建一个版本时：
-
-```bash
-BUILD_MODULES=1 ./build_kernel_612.sh
-scripts/pack_linux_artifacts.sh 6.12
-
-BUILD_MODULES=1 ./build_kernel_735.sh
-scripts/pack_linux_artifacts.sh 7.3
-```
-
-脚本会自动同步 `mainline-6.12/rk3568-ecloudbook-air-24rtw*.dts`、注册默认板型与 USB 试机两个
-DTB、按需应用 `mainline-6.12/patches/0001`~`0015`（跳开诊断性 `0002` 与已被 `v23`
-替代的 `0004`），并输出 `Image` 与两个 DTB。
-
-> rootfs 里的内核模块用 `scripts/rootfs-postprocess-debian13.sh` 重新生成，把
-> `MODULES_TARBALL` 指向刚生成的 `artifacts[/7.3]/modules-<kver>.tar.gz`；不要手工
-> 改 rootfs 镜像里的模块。
-
-### 3. 打包 `boot_a` 镜像
-
-`rebuild_linux.sh` 已经调用 `scripts/pack_linux_artifacts.sh` 完成打包；单独重打
-6.12 的 v29 镜像仍可使用：
-
-```bash
-./build_boot_linux_612.sh
-```
-
-生成 `<= 160 MiB` 的 Rockchip Android Boot Image v2 镜像，校验 DTB 内 `__symbols__`、`chosen` 与 `reboot_mode`。
-
-### 4. 部署桌面与多媒体调优要点
-* **系统配置模板**：安装 `alsa-ucm-conf` 后将 `rootfs_overlay/` 下配置拷入目标系统 `/`（含 `/etc/` 与 `/usr/share/alsa/ucm2/`，用于耳机插拔自动静音喇叭与合盖休眠），并在 `apt upgrade` 后避免让发行版脚本覆写未签名 `boot_a`（本机已验证可清理无关的 `linux-image-current-rockchip64`）。
-* **H.264 视频硬解**：`vlc` 与 `mpv`（走 FFmpeg）暂不支持无 `v4l2-request` 补丁的 RK3568 Hantro 硬解。安装 **`gstreamer1.0-plugins-bad`** + `gstreamer1.0-x` + `parole` 后，将 `parole` 输出设为 `xvimagesink`（避开默认 `autoimagesink` 回退 `ximagesink` 或 `glimagesink` 导致掉帧）：
-  ```bash
-  xfconf-query -c parole -p /video/videosink -n -t string -s xvimagesink
-  ```
-  实测播放 1080p H.264 网络流时稳定开启 `/dev/video1` 硬解，单进程 CPU 占用由 VLC 软解的 ~249% 降至 ~47%。
-
----
-
-## 五、 救砖与回退
-
-详见 [docs/OTG_RECOVERY.md](docs/OTG_RECOVERY.md)：
-* 试启动 `misc` 配置为 `tries_remaining=3` 时，连续冷重启失败会自动回退 `Slot B` 原厂 Android；
-* 随时可通过串口 `Ctrl+C` 或 `reboot loader` / `reboot ums` 经 Type-C 旁的 USB-A 口连接主机 `rkdeveloptool` 恢复。
+双系统可正常启动时，从 Debian 电源菜单选「安卓」即可切回 B 槽。无法进入桌面时，按 [OTG 恢复手册](docs/OTG_RECOVERY.md) 使用已验证的 Android ADB、U-Boot Rockusb 或 UMS。整盘恢复前先核对当前 GPT 与备份布局，特别是 p20 的起止位置和大小。[双系统分区回滚](docs/P20_P21_DUAL_BOOT_PLAN.md#8-回滚)

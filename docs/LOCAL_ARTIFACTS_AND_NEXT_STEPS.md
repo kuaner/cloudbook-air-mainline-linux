@@ -1,8 +1,8 @@
-# 本地已备产物与真机后续步骤（`6.12.117-cloudbook`）
+# 6.12.117 本地构建与早期试跑记录
 
 > 生成日期：2026-11-19  
 > 构建环境：arm64 容器（Ubuntu 24.04 / clang 18.1.3 / LLD 18.1.3 / GNU patch 2.7.6 / QEMU 10.0.13）  
-> 本文只描述**不接触真机**就能完成并已验证的部分，以及拿到机器后的最小操作。
+> 本文记录当时的本地和 QEMU 验证。当前安装见 [7.3.5 刷机手册](FLASHING_GUIDE.md)，6.12 维护见 [6.12 构建](../mainline-6.12/README.md)。
 
 ---
 
@@ -34,7 +34,7 @@
    CLOUDBOOK switching to /sbin/init
    ```
 
-## 3. 尚未验证（必须真机）
+## 3. 本次构建留下的真机验证项
 
 - `0010` 补丁里 RK3568 eDP 的结构体适配与 GRF 写入保护（唯一有硬件风险的改动）。
 - MT7663S Wi-Fi/蓝牙实际连接与吞吐、PD 充电、盒盖休眠、键盘触控板、Hantro 硬解。
@@ -78,71 +78,8 @@ python3 pack_boot_linux.py \
 
 打包结果远低于 160 MiB 的 `boot_a` 分区上限。
 
-## 6. 真机步骤 3：U 盘首测（不改原厂数据）
+## 6. 后续试跑
 
-```bash
-# 1) 分区与格式化（先 lsblk 核对盘符）
-sudo parted -s /dev/sdX mklabel gpt
-sudo parted -s /dev/sdX mkpart primary ext4 1MiB 100%
-sudo mkfs.ext4 -L ROOTFS /dev/sdX1
+早期 U 盘根盘使用 `LABEL=ROOTFS`，内置根盘使用 `LABEL=EMMC_ROOTFS`。原版 6.12 U 盘镜像使用 `cloudbook` 账户。整盘 ext4 识别与内屏早期排障见 [11 月 21 日的真机记录](LINUX_USB_BOOT_FAILURE_2026-11-21.md)。
 
-# 2) 解开用户态
-sudo mkdir -p /mnt/cb && sudo mount /dev/sdX1 /mnt/cb
-sudo tar -I zstd -xf artifacts/rootfs-debian13-trixie-arm64-cloudbook.tar.zst -C /mnt/cb
-
-# 3) 首测卷标改为 ROOTFS
-sudo sed -i 's/^LABEL=EMMC_ROOTFS /LABEL=ROOTFS /' /mnt/cb/etc/fstab
-sync && sudo umount /mnt/cb
-```
-
-随后按 `docs/FLASHING_GUIDE.md` 第 5 节写入 `boot_a` 与 `misc`（A 槽三次试引导）。
-
-## 7. 真机步骤 4：迁移到内置 eMMC
-
-在 U 盘启动的系统里执行：
-
-```bash
-sudo mkfs.ext4 -F -L EMMC_ROOTFS /dev/mmcblk0p20
-sudo mount /dev/mmcblk0p20 /mnt
-# rootfs 包内的 /etc/fstab 已经是 LABEL=EMMC_ROOTFS
-sudo tar -I zstd -xf /path/to/rootfs-debian13-trixie-arm64-cloudbook.tar.zst -C /mnt
-sync && sudo umount /mnt
-# 写入 eMMC 版 boot.img 并回读校验
-sudo dd if=/path/to/boot_linux_612_v29_emmc.img of=/dev/mmcblk0p11 bs=4M conv=fsync
-```
-
-确认可独立启动后，用 `switch_ab_slot.py commit_slot_a` 生成 `misc` 并写入 `/dev/mmcblk0p6` 锁定 Slot A。
-
-## 8. 默认账户与安全
-
-| 账户 | 密码 | 说明 |
-| :--- | :--- | :--- |
-| `cloudbook` | `cloudbook` | 属 `sudo` 组 |
-| `root` | `cloudbook` | 串口/本地登录 |
-
-**首次登录后请立即 `passwd` 修改**。rootfs 已启用 `NetworkManager`、`bluetooth`、`ssh`，SSH 默认允许密码登录。
-
-## 9. 复现方法
-
-| 内容 | 位置 |
-| :--- | :--- |
-| 7.3 initramfs | `scripts/rootfs-postprocess-debian13.sh` 在 rootfs 内安装 Debian `initramfs-tools`，生成 `/boot/initrd.img-7.3.5-cloudbook`；`root=LABEL=` 由它的 local 脚本解析 |
-| 6.12 initramfs（遗留） | `scripts/initramfs-6.12.117/init`（手工 busybox，仅 6.12 分支引用） |
-| rootfs 后处理脚本 | `scripts/rootfs-postprocess-debian13.sh` |
-| 补丁重基说明 | `mainline-6.12/README.md` 的“补丁基线与 6.12.117 重基”一节 |
-
-复现命令（与本次构建一致）：
-
-```bash
-# rootfs
-debootstrap --arch=arm64 --variant=minbase \
-  --include=systemd,systemd-sysv,dbus,sudo,openssh-server,network-manager,\
-wpasupplicant,iw,wireless-regdb,polkitd,rfkill,bluez,kmod,e2fsprogs,usbutils,pciutils,\
-ca-certificates,curl,less,vim-tiny,htop,locales \
-  trixie /rootfs http://deb.debian.org/debian
-
-# 后处理会安装 initramfs-tools 并在 rootfs 内生成 /boot/initrd.img-7.3.5-cloudbook；
-# 打包时 scripts/pack_linux_artifacts.sh 会从 rootfs tarball 自动取出它
-KVER=7.3.5-cloudbook MODULES_TARBALL=/inputs/modules-7.3.5-cloudbook.tar.gz \
-  scripts/rootfs-postprocess-debian13.sh
-```
+目前内置双系统使用 [p20 `userdata`、p21 `EMMC_ROOTFS`](P20_P21_DUAL_BOOT_PLAN.md)。7.3.5 镜像内的 initramfs 由 Debian `initramfs-tools` 生成，新版桌面使用 `kuaner`。构建与配套文件见 [7.3.5 桌面与 rootfs](../mainline-7.3/README.md#7-debian-桌面与-rootfs-构建)。

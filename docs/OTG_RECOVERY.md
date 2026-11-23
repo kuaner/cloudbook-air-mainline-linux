@@ -4,18 +4,17 @@
 > **硬件配置**：无外置 TF 卡槽，Type-C 口旁边的 USB-A 口为 OTG 刷机口 (`dwc3@fcc00000`)；双公头 USB-A 线直连主机。  
 > **安全边界**：本机已启用 OTP 熔断安全启动（`fuse.programmed=1`、`androidboot.secureboot=1`）。`idbloader`（`RKSS`）与 `uboot_a/b`、`trust_a/b` 带硬件/RSA-2048 签名校验，**严禁使用未签名开源 SPL/U-Boot 覆盖前 8 MiB、`uboot_a/b`、`trust_a/b` 或 `security` 分区**。
 
----
+桌面和手机客户端都能运行时，优先使用 [Debian 与 Android 系统切换](../tools/system-switcher/README.md)。下面是无法用日常入口时的恢复途径。新版安装见 [7.3.5 刷机手册](FLASHING_GUIDE.md)。
 
 ## 1. 冷备份清单与校验
 
-所有原始与阶段关键分区备份位于 `factory_backup/`，可使用校验清单确认完整性：
+`factory_backup/` 是本机原始分区和阶段快照的本地目录。恢复前根据备份时的校验清单核对文件。在仓库根目录执行：
 
 ```bash
-cd .
-sha256sum -c factory_backup/MANIFEST.sha256
+shasum -a 256 -c factory_backup/LOCAL_BACKUP.sha256
 ```
 
-关键备份文件说明（节点编号：`boot_b` / Android 下为 `/dev/block/mmcblk2p*`，Linux 6.12 下为 `/dev/mmcblk0p*`）：
+关键备份文件说明（节点编号：`boot_b` / Android 下为 `/dev/block/mmcblk2p*`，主线 Linux 下为 `/dev/mmcblk0p*`）：
 
 | 备份文件 | 对应内容 | 用途 |
 | :--- | :--- | :--- |
@@ -24,16 +23,16 @@ sha256sum -c factory_backup/MANIFEST.sha256
 | `mmcblk0_gpt.sfdisk` / `mmcblk0_last1M_backup_gpt.bin` | 主/备 GPT 分区表 | 修复 GPT 结构 |
 | `boot_b.img` | 完整原厂 Android 11 `boot_b`（160 MiB） | 恢复原厂 Android 内核与 `ramdisk`/`resource` |
 | `boot_a_4.19_verified_20261112.img` | 原厂 4.19 内核 Linux 引导快照 | 回退对比 |
-| `boot_a_linux612_v23.img` | 主线 Linux 6.12 `v23` 引导快照（160 MiB） | 备份参考（当前 `boot_a` 运行 `v24`，见工作区 `boot_linux_612_v24.img`） |
+| `boot_a_linux612_v23.img` | 主线 Linux 6.12 `v23` 引导快照（160 MiB） | 早期移植的备份参考 |
 | `uboot_a.img`, `uboot_b.img`, `trust_a.img`, `trust_b.img`, `vbmeta_a.img`, `vbmeta_b.img`, `dtbo_a.img`, `dtbo_b.img`, `security.img`, `logo.img`, `baseparameter.img`, `zteparameter.img`, `metadata.img`, `backup.img.zst`, `cache.img.zst`, `super.img.zst` | 原厂全套系统与配置分区 | 完整恢复原厂 Android 系统 |
-| `misc_locked_slot_a.img` | 已锁定 `slot_a` (`boot_a`) 的 4 MiB `misc` 镜像 | 快速切换回 Linux（`0x0` 与 `0x4000` BCB 已清零） |
-| `misc.img` | 原厂抓包时 `misc` 快照 | **注意**：该备份 `0x4000` 含 `boot-recovery` 字样，切回 Android **请使用 `switch_ab_slot.py restore_slot_b` 新生成 clean 镜像**，勿直接盲刷原始 `misc.img` |
+| `misc_locked_slot_a.img` | 已锁定 `slot_a` (`boot_a`) 的 4 MiB `misc` 镜像 | 旧的恢复快照（已清空 BCB 并标记 A 槽成功） |
+| `misc.img` | 原厂抓包时 `misc` 快照 | 该次备份的 `0x4000` 含 `boot-recovery`，恢复时按第 5 节核对 BCB |
 
 ---
 
-## 2. eMMC 实盘 GPT 扇区表（512 字节/扇区）
+## 2. 原厂 eMMC GPT 扇区表（512 字节/扇区）
 
-> **勘误警告**：早期 `README.md` 曾误记 `misc` 为 `0x18000`；以下严格依据真机导出的 `factory_backup/mmcblk0_gpt.sfdisk`（`last-lba: 61472734`）：
+以下为修改分区前的本机备份（`last-lba: 61472734`）。现有双系统的 p20 已缩小，并增加 p21。任何按 LBA 的恢复操作均应先核对实盘位置。[已部署的 p20/p21 布局](P20_P21_DUAL_BOOT_PLAN.md#2-已验证的-8-gib-布局)
 
 | 分区 | 名称 | 起始 LBA（十进制 / 十六进制） | 扇区数（大小） | Linux 设备 | Android 设备 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -95,13 +94,13 @@ sha256sum -c factory_backup/MANIFEST.sha256
 
 ## 4. `misc` 分区 A/B 槽位数据结构与常用切换命令
 
-原厂 U-Boot 读取 `misc` 分区偏移 `0x800`（2048 字节处）的 32 字节 `AvbABData` 结构（末尾 4 字节为大端 CRC-32），并需同时保证 BCB 区域 `0x0000..0x0040` 与 `0x4000..0x4040` 为全 0：
+原厂 U-Boot 读取 `misc` 分区偏移 `0x800`（2048 字节处）的 32 字节 `AvbABData` 结构（末尾 4 字节为大端 CRC-32）。BCB 区域 `0x0000..0x0040` 和 `0x4000..0x4040` 可能包含待执行的恢复或更新命令。日常切换仅更新 A/B 记录。以下离线命令生成整份 `misc` 镜像，并清零这两个 BCB 区域。
 
 - **锁定 `slot_a`（直接引导 Linux `boot_a`，跳过 3 次计数）**：
   - `0x800:0x820` hex：`00414230010000000f0001000e000100000000000000000000000000da933679`
   - 含义：`slot_a(prio=15, tries=0, successful=1)`，`slot_b(prio=14, tries=0, successful=1)`
-  - 对应生成命令：`python3 switch_ab_slot.py commit_slot_a /tmp/misc_commit_a.img`（与 `factory_backup/misc_locked_slot_a.img` 字节完全一致）
-- **试引导 `slot_a`（给 `boot_a` 3 次机会，失败自动回退 Android `boot_b`）**：
+  - 对应生成命令：`python3 switch_ab_slot.py commit_slot_a /tmp/misc_commit_a.img`
+- **试引导 `slot_a`（初始计数为 3，耗尽时回退 Android B）**：
   - `0x800:0x820` hex：`00414230010000000f0300000e00010000000000000000000000000096970631`
   - 含义：`slot_a(prio=15, tries=3, successful=0)`，`slot_b(prio=14, tries=0, successful=1)`
   - 对应生成命令：`python3 switch_ab_slot.py test_slot_a /tmp/misc_test_a.img`
@@ -114,110 +113,32 @@ sha256sum -c factory_backup/MANIFEST.sha256
 
 ## 5. 标准恢复操作步骤
 
-### 场景 1：进入 Loader 模式后切回 Android (`boot_b`)
+### 场景 1：在 Loader 模式下切回 Android B
+
+适用于 Android B 已确认可启动、桌面和 ADB 切换都无法使用的情况。先读取当前 `misc`，核对分区位置并保存备份。确认没有进行中的 OTA 或恢复任务，再写入清理了 BCB 的恢复镜像。以下命令以第 2 节本机 `misc` 的 LBA 和长度为例。
 
 ```bash
-cd .
-python3 switch_ab_slot.py restore_slot_b /tmp/misc_restore_b.img
-
-# 先确认设备已连接且在 Loader 模式
 rkdeveloptool ld
 rkdeveloptool ppt
+rkdeveloptool rl 49152 8192 /tmp/misc_before_restore.img
+python3 switch_ab_slot.py restore_slot_b /tmp/misc_restore_b.img
+wc -c /tmp/misc_before_restore.img /tmp/misc_restore_b.img
+```
 
-# 写入 clean 的 restore_slot_b misc 镜像（二选一：按分区名或按 LBA 49152 / 0xc000）
+确认两份文件均为 4194304 字节，再写入。`cmp` 通过后才执行 `rkdeveloptool rd` 重启。
+
+```bash
 rkdeveloptool wlx misc /tmp/misc_restore_b.img
-# 或: rkdeveloptool wl 49152 /tmp/misc_restore_b.img
-
-# 回读前 32 字节（含 0x800 处）核对：读取 misc 分区再重启
 rkdeveloptool rl 49152 8192 /tmp/misc_readback.img
 cmp /tmp/misc_restore_b.img /tmp/misc_readback.img
-rkdeveloptool rd
 ```
 
-### 场景 2：进入 Loader 模式后恢复 `boot_b`（Android）或 `boot_a`（Linux）
+### 场景 2：恢复启动镜像或数据分区
 
-```bash
-# 恢复原厂 Android boot_b
-rkdeveloptool wlx boot_b factory_backup/boot_b.img
-# 或: rkdeveloptool wl 405504 factory_backup/boot_b.img
+- **Linux `boot_a`**。写入与根盘配套的 `boot_linux_73_v30_auto.img`。能启动 Android B 时，按 [刷机手册的 A 槽流程](FLASHING_GUIDE.md#3-首次写入-a-槽)写入并比对。仅能进入 Loader 时，可在 `rkdeveloptool ppt` 核对后用 `rkdeveloptool wlx boot_a` 写入。用 `rkdeveloptool rl` 读回该分区，比较镜像有效字节，再设置试启动记录。
+- **原厂 Android**。仅在对应分区损坏时，从本机验证过的备份恢复 `boot_b`、`super` 等分区。恢复 userdata 前先核对 GPT 和容量。全尺寸原厂 p20 镜像无法写进缩小后的 8 GiB p20。[双系统回滚](P20_P21_DUAL_BOOT_PLAN.md#8-回滚)
 
-# 恢复当前验证通过的主线 Linux 6.12 v24 到 boot_a，并锁定 slot_a
-rkdeveloptool wlx boot_a boot_linux_612_v24.img
-rkdeveloptool wlx misc factory_backup/misc_locked_slot_a.img
-rkdeveloptool rd
-```
+## 6. 系统仍可运行时的切换
 
-### 场景 3：整系统压缩分区恢复（如 `super` / `backup` / `cache` 损坏）
-
-```bash
-# 解压 .zst 原始镜像（确保磁盘有至少 6 GiB 可用空间）
-zstd -d factory_backup/super.img.zst -o /tmp/super.img
-rkdeveloptool wlx super /tmp/super.img
-rkdeveloptool rd
-```
-
-### 场景 4：无 Linux 时，在 Android 下通过 ADB 改写 `misc` 切回 Linux (`boot_a`)
-
-> 注：Android 下 `misc` 设备节点为 `/dev/block/by-name/misc`（对应 `/dev/block/mmcblk2p6`）。经 `flash_candidate_boot_a.sh` 实测，本机通过 `adb root` 后即可直接以 `uid=0` 执行 `dd` 与 `sha256sum` 校验（不依赖 `su`/`xxd`）。
-
-#### 方法 4A：直接推送已锁定 `slot_a` 镜像（推荐，同时清零 BCB 并跳过 3 次计数）
-
-```bash
-cd .
-adb root
-adb shell id -u   # 必须输出 0
-
-sha256sum factory_backup/misc_locked_slot_a.img
-adb push factory_backup/misc_locked_slot_a.img /data/local/tmp/misc_locked_slot_a.img
-adb shell "dd if=/data/local/tmp/misc_locked_slot_a.img of=/dev/block/by-name/misc bs=4M conv=fsync && sync"
-
-# 整分区 SHA-256 回读校验（必须与本地 factory_backup/misc_locked_slot_a.img 完全一致）
-adb shell "sha256sum /dev/block/by-name/misc"
-adb reboot
-```
-
-#### 方法 4B：使用 `switch_ab_slot.py` 给 `slot_a` 开启 3 次容错试引导
-
-```bash
-cd .
-python3 switch_ab_slot.py test_slot_a /tmp/misc_test_a.img
-sha256sum /tmp/misc_test_a.img
-
-adb root
-adb push /tmp/misc_test_a.img /data/local/tmp/misc_test_a.img
-adb shell "dd if=/data/local/tmp/misc_test_a.img of=/dev/block/by-name/misc bs=4M conv=fsync && sync"
-adb shell "sha256sum /dev/block/by-name/misc"
-adb reboot
-```
-
-*(提示：若只想在 Android 内检查当前生效槽位，可执行 `adb shell getprop ro.boot.slot_suffix` 或 `adb shell bootctl get-current-slot`；在 `slot_b` / Android 时分别返回 `_b` / `1`。)*
-
----
-
-## 6. 在 Linux 6.12 下手动切回 Android (`boot_b`)
-
-当需要从 Linux 切回原厂 Android 11 时：
-
-```bash
-# 方式一（推荐）：在工作区生成干净的 restore_slot_b 镜像并传至板端写入 /dev/mmcblk0p6
-# python3 switch_ab_slot.py restore_slot_b /tmp/misc_restore_b.img
-# scp /tmp/misc_restore_b.img root@<BOARD_IP>:/tmp/misc_restore_b.img
-dd if=/tmp/misc_restore_b.img of=/dev/mmcblk0p6 bs=4096 conv=fsync && sync
-
-# 方式二：直接在板端 Linux 用 python3 写入已校验的 restore_slot_b 32 字节记录并清零 BCB
-python3 - <<'EOF'
-restore_b = bytes.fromhex("00414230010000000e0001000f000100000000000000000000000000119c9cae")
-with open("/dev/mmcblk0p6", "r+b") as f:
-    f.seek(0); f.write(b"\x00" * 64)
-    f.seek(0x4000); f.write(b"\x00" * 64)
-    f.seek(0x800); f.write(restore_b)
-    f.flush()
-with open("/dev/mmcblk0p6", "rb") as f:
-    f.seek(0x800)
-    print("READBACK:", f.read(32).hex())
-EOF
-sync && reboot
-```
-
-*(若需在板端 Linux 下直接切回或锁定 `slot_a`，将上面 `restore_b` 替换为 `commit_slot_a` 十六进制 `00414230010000000f0001000e000100000000000000000000000000da933679` 即可。)*
-
+- 在 Debian i3 桌面打开电源菜单并选择「安卓」。如桌面入口不可用但 Debian 仍可登录，可以通过 `sudo /usr/local/sbin/cloudbook-mark-boot-successful check-android` 先检查 B 槽与 A/B 记录，检查通过后用 `sudo /usr/local/sbin/cloudbook-mark-boot-successful switch-to-android` 请求重启。
+- 从 Android B 切回 Debian 时，先使用 Android「切换系统」。若仍需手动设置 A 槽，使用[试启动记录写入步骤](FLASHING_GUIDE.md#3-首次写入-a-槽)，保留 B 槽回退。原有 Linux 引导镜像与根盘匹配时，可以直接设置试启动记录。

@@ -28,9 +28,9 @@ v30 已纳入充电状态及休眠插拔处理。合盖后持续插电直到充�
 | 默认桌面 | LightDM、i3、Catppuccin Mocha、Rofi 和网络托盘。ARM64 QEMU 使用 `#10` 和最终根镜像副本验证了 i3 登录、应用菜单及网络托盘。`Win+D` 打开应用菜单，点顶栏网络图标选择 Wi-Fi。 |
 | 软件源与时钟 | 阿里云 Debian 主仓库、常规更新及安全更新的 arm64 索引已在真机和虚拟机验证。时区为 `Asia/Shanghai`，NTP 首选 `ntp.aliyun.com`。现场 Wi-Fi 的 NTP 请求被拒绝，真机系统时钟和 RTC 已手动校准。虚拟机运行中由备用 NTP 源完成同步，独立的双站 HTTPS 校时也修正了人为引入的约 15 分钟误差。 |
 
-## 构建方式变更（待真机复验）
+## 2026-11-22 构建方式变更
 
-- **initramfs**：7.3 不再使用手工 busybox `/init`，改由 Debian `initramfs-tools` 在 rootfs 后处理阶段生成 `/boot/initrd.img-7.3.5-cloudbook`。根分区仍由 cmdline 的 `root=LABEL=EMMC_ROOTFS`（U 盘为 `ROOTFS`）确定，现在由发行版 initrd 的 local 脚本解析，并自带 e2fsck、udev 等待与救援 shell。上表的真机结果都是在旧 initramfs 上测得的，新 initrd 需在下次开机复验。
+- **initramfs**：7.3 不再使用手工 busybox `/init`，改由 Debian `initramfs-tools` 在 rootfs 后处理阶段生成 `/boot/initrd.img-7.3.5-cloudbook`。根分区仍由 cmdline 的 `root=LABEL=EMMC_ROOTFS`（U 盘为 `ROOTFS`）确定，现在由发行版 initrd 的 local 脚本解析，并自带 e2fsck、udev 等待与救援 shell。上述早期真机结果使用旧 initramfs。11 月 23 日的 p21 双系统验证使用 Debian initrd。
 - **时间同步**：移除自制的 `cloudbook-https-time.service/timer` 与 `cloudbook-https-time` 脚本，统一由 `systemd-timesyncd` 使用阿里云、Cloudflare 与 Debian 池的 NTP 源校时；上表提到的 HTTPS 校时属于旧构建。
 - **顶栏**：i3 内置 i3bar 换成 polybar（Catppuccin 配色，左侧 i3 工作区、中间日期、右侧 CPU/内存/Wi-Fi/电量与系统托盘）。`~/.local/bin/i3-theme` 切换 Catppuccin 变体时会同时重写 `~/.config/polybar/colors.ini` 并重启顶栏，i3 与 polybar 保持同一配色。
 - **A/B 成功上报**：Linux 没有 Android 的 `bootctl`，新增 `cloudbook-mark-boot-successful.service`（`local-fs.target` 之后运行），按 AVB AB 格式把当前槽写成 `tries=0, successful=1`。写入前校验 magic 与 CRC32，原记录备份到 `/var/lib/cloudbook/misc-ab.bak`。没有这一步，Rockchip U-Boot 会在下一次启动把该槽 priority 清 0（实测一次非正常关机即触发）。
@@ -55,9 +55,9 @@ v30 已纳入充电状态及休眠插拔处理。合盖后持续插电直到充�
 
 ARM64 QEMU（`-M virt` + virtio-blk + 8 GiB USB 镜像）已用该组合启动：initrd 内 `fsck.ext4 -a /dev/vda` 执行、根分区按 `LABEL=ROOTFS` 挂载、`switch_root` 后 systemd 257 到达 `graphical.target`，lightdm 启动并出现登录提示。真机的 eDP 内屏、Wi-Fi 与电源路径仍需实机复验。
 
-## 留给下次真机验证的事项
+## 2026-11-22 留下的验证项
 
-- 确认最终 i3 根镜像与 `#10` 在同一次物理开机中进入桌面，复测右上角光标、无线冷启动、充电指示灯及合盖唤醒。
+- 后续桌面与 p21 启动结果见本文开头。充电指示灯、合盖唤醒和无线冷启动需按实际镜像分别验收。
 - 热重启曾出现电源灯熄灭、需要手动按电源键的现象。最近一次写入后，A 槽剩余尝试为 3，B 已标记启动成功。次数由引导器在后续启动时处理；停在黑屏或已断电时没有新的启动尝试。热重启停在哪一步仍需真机启动日志确认。
 - USB 根盘实际占用了配置为 host 的 OTG 控制器。当前 Linux 调试使用 SSH；同一接口同时提供有线 ADB 尚待解决。
 
