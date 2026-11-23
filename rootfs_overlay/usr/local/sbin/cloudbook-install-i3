@@ -5,7 +5,7 @@ umask 022
 login_user=${1:?login user required}
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y i3-wm i3lock xss-lock rofi \
+apt-get install -y i3-wm light-locker rofi \
     network-manager-applet lxpolkit pkexec zenity pcmanfm firefox-esr firefox-esr-l10n-zh-cn \
     fonts-noto-cjk fonts-noto-cjk-extra fonts-noto-color-emoji \
     fonts-wqy-zenhei fonts-wqy-microhei \

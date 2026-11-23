@@ -194,7 +194,7 @@ sudo umount /mnt/emmc
 
 ## 8. 设置启动槽
 
-已验证可启动的双系统可以使用「切换系统」切槽；下方保留初次安装和恢复时手动设置槽位的说明。[应用与授权](../tools/system-switcher/README.md)
+双系统能够正常启动后，可以通过 Debian 电源菜单和 Android「切换系统」切换启动槽。初次安装和恢复时按下文手动设置槽位。[切换入口与授权](../tools/system-switcher/README.md)
 
 分区完成后再处理 `misc`：
 

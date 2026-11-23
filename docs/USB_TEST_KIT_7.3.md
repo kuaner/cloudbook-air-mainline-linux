@@ -55,7 +55,7 @@ sudo blkid /dev/sdX1   # 应显示 LABEL="ROOTFS"
 ## 4. 首次启动预期
 
 - UART（`115200 8N1`）：`Linux version 7.3.5-cloudbook`、`CLOUDBOOK USB root found at ...`、systemd 启动
-- 屏幕：CloudBook Air 启动画面，随后进入 LightDM。登录界面顶部的 `cloudbook` 标识居中，默认会话为 Archcraft 配色的 i3。
+- 屏幕：CloudBook Air 启动画面，随后进入 LightDM。登录和锁屏沿用 Archcraft i3 的东京夜景、深色底和粉色强调色。密码卡片和顶栏 `cloudbook` 标识各自居中，右上角日期、时间和电源图标与桌面采用同一套样式。
 - 账户：
 
 | 账户 | 密码 |
@@ -78,9 +78,9 @@ sudo blkid /dev/sdX1   # 应显示 LABEL="ROOTFS"
 | `Win+Shift+X` / `Win+Shift+E` | 锁屏 / 打开电源菜单 |
 | `Ctrl+空格` / `Print` | 切换中文输入 / 截图到 `~/Pictures` |
 
-关机可按 `Win+Shift+E`，选「关机」后确认。登录界面也可用右上角电源按钮。合盖休眠会锁屏，开盖后直接输入 Debian 登录密码并按 `Enter`。`Verifying` 表示 i3lock 正在验证密码。
+关机可按 `Win+Shift+E`，选「关机」后确认。登录界面也可用右上角的红色电源按钮。按 `Win+Shift+X` 或从合盖休眠唤醒后，在屏幕中央输入 Debian 登录密码，按 `Enter` 或点「解锁」。
 
-已部署到 eMMC p21 的双系统可用应用菜单里的「切换系统」往返 Debian 与 Android。[图形切换与授权步骤](../tools/system-switcher/README.md)
+已部署到 eMMC p21 的双系统可以从 Debian 的电源菜单选择「安卓」。在 Android 中打开「切换系统」可以重启回 Debian。[图形切换与授权步骤](../tools/system-switcher/README.md)
 
 时区为 `Asia/Shanghai`。联网后 `systemd-timesyncd` 依次尝试阿里云、Cloudflare 与 Debian 池的 NTP 源。运行 `timedatectl timesync-status` 可查看应答服务器和收到的数据包数；NTP 全部不可达时时钟保持不动，不再有额外的 HTTPS 校时服务。
 

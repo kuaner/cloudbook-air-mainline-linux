@@ -2,7 +2,7 @@
 
 适用于 A 槽运行 Debian、B 槽运行原厂 Android 11、内置 `rootfs` 分区存放 Debian 的 CT2000-24RTW。切换前保存工作，两端都会在重启前要求确认。若 `boot_a` 使用 USB 优先的引导镜像，切回内置 Debian 前请拔掉带 `ROOTFS` 卷标的试跑 U 盘。
 
-- **Debian**：按 `Win+D` 搜索带蓝色双箭头图标的「切换系统」，或按 `Win+Shift+E` 打开电源菜单，选「切换到 Android」。确认后用 Linux 管理员密码授权。
+- **Debian**：点桌面右上角电源图标，或按 `Win+Shift+E` 打开电源菜单，选择带安卓机器人图标的「安卓」。确认后用 Linux 管理员密码授权。
 - **Android**：安装 `cloudbook-system-switcher.apk`，打开「切换系统」。首次点击「检查启动状态」时，在系统提示中勾选「一律允许」并授权。检查通过后，点「重启到 Debian」。
 
 Android 端日常切换无需连接电脑，但必须保留开启密钥验证的网络 ADB。应用使用独立密钥连接本机 `127.0.0.1:5555`，通过原厂 `su 0` 取得写入启动记录的权限。恢复出厂设置后需要重新配置 ADB 和授权。参见[原厂 Android 的 ADB 配置记录](../../docs/LINUX_USB_BOOT_FAILURE_2026-11-21.md#31-android-b-重启后的普通网络-adb)。

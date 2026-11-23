@@ -127,7 +127,7 @@ BUILD_MODULES=1 ./build_kernel_735.sh
 | `boot_linux_73_v30_auto.img` | A 槽引导镜像，有匹配的 `ROOTFS` U 盘时优先使用它，否则挂载 `EMMC_ROOTFS` |
 | `SHA256SUMS` | 四个文件的本地校验清单 |
 
-引导镜像启用 Plymouth CloudBook Air 动画并隐藏内核企鹅。按 `Esc` 可查看启动信息。LightDM 顶部的 `cloudbook` 标识按整条面板居中。桌面镜像也会安装带图标的 Linux 切换工具，安卓版单独构建安装。[双系统切换说明](../tools/system-switcher/README.md)
+引导镜像启用 Plymouth CloudBook Air 动画并隐藏内核企鹅。按 `Esc` 可查看启动信息。LightDM 登录和 Light Locker 解锁共用东京夜景、居中的密码卡片，以及与桌面 Polybar 同样的日期、时间和电源图标样式。顶栏的 `cloudbook` 标识按整条面板居中。从 Debian 桌面切换到 Android 时，打开电源菜单并选择「安卓」。[双系统切换说明](../tools/system-switcher/README.md)
 
 制作同配置的本地根镜像时，把自己设备 `vendor_b` 的 `/etc/firmware/WIFI_RAM_CODE_MT7663.bin` 和 `mt7663_patch_e2_hdr.bin` 一起放入构建环境的 `/inputs/firmware/7.3.5-cloudbook/`，也可用 `MT7663_VENDOR_FIRMWARE_DIR` 指定目录。`scripts/rootfs-postprocess-debian13.sh` 按驱动所需文件名安装这两个文件。省略版本目录与覆盖变量时，脚本使用 `/inputs/firmware/` 中原有的发行版固件。
 

@@ -84,6 +84,12 @@ if [[ -e /tmp/base-policy-rc.d ]]; then mv /tmp/base-policy-rc.d "$policy"; fi
 chroot "$root" runuser -u kuaner -- i3 -C -c /home/kuaner/.config/i3/config
 test -x "$root/usr/bin/xfce4-terminal.wrapper"
 test ! -e "$root/usr/bin/xterm"
+test -x "$root/usr/bin/light-locker"
+test -x "$root/usr/bin/light-locker-command"
+test -x "$root/home/kuaner/.local/bin/cloudbook-lock"
+test -x "$root/usr/local/bin/cloudbook-switch-system"
+test ! -e "$root/usr/share/applications/cloudbook-switch-system.desktop"
+chroot "$root" runuser -u lightdm -- test -r /usr/share/backgrounds/cloudbook/tokyo.png
 chroot "$root" lsinitramfs "/boot/initrd.img-$kver" > /tmp/initrd-files
 grep -Fx 'scripts/local-top/00-usb-first' /tmp/initrd-files
 for file in /etc/plymouth/plymouthd.conf /usr/sbin/plymouthd /scripts/init-premount/plymouth \

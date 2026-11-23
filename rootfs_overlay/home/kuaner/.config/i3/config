@@ -81,7 +81,7 @@ bindsym XF86MonBrightnessUp exec --no-startup-id ~/.local/bin/cloudbook-brightne
 bindsym XF86MonBrightnessDown exec --no-startup-id ~/.local/bin/cloudbook-brightness down
 
 # Lock and screenshot
-bindsym $mod+Shift+x exec i3lock -c 1e222a
+bindsym --release $mod+Shift+x exec --no-startup-id ~/.local/bin/cloudbook-lock
 bindsym Print exec scrot '%Y-%m-%d-%H%M%S.png' -e 'mv $f ~/Pictures/'
 
 exec_always --no-startup-id ~/.config/i3/scripts/i3_bar

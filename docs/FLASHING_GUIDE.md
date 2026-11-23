@@ -387,7 +387,7 @@ head -c "$(stat -c %s /tmp/boot_linux_612_v29_emmc.img)" /dev/mmcblk0p11 | sha25
 
 ## 7. 系统初始化与音视频/桌面调优
 
-新版 7.3.5 桌面已包含 Archcraft i3 配置、Xfce Terminal、Wi-Fi 菜单和 Linux 切换工具。[登录和常用快捷键](USB_TEST_KIT_7.3.md#4-首次启动预期) · [图形切换与安卓版安装](../tools/system-switcher/README.md)
+新版 7.3.5 桌面包含 Archcraft i3 配置、Xfce Terminal 和 Wi-Fi 菜单。选择电源菜单的「安卓」可重启到 Android。[登录和常用快捷键](USB_TEST_KIT_7.3.md#4-首次启动预期) · [图形切换与安卓版安装](../tools/system-switcher/README.md)
 
 进系统后推荐按以下清单完成桌面环境与硬件解码设置：
 

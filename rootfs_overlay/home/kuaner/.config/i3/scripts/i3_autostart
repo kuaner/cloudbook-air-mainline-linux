@@ -6,8 +6,8 @@ for program in nm-applet lxpolkit; do
         "$program" &
     fi
 done
-if ! pgrep -u "$(id -u)" -x xss-lock >/dev/null; then
-    xss-lock --ignore-xss --transfer-sleep-lock -- i3lock --nofork -c 1e222a &
+if ! pgrep -u "$(id -u)" -x light-locker >/dev/null; then
+    light-locker --lock-on-suspend --lock-after-screensaver=0 &
 fi
 if ! pgrep -u "$(id -u)" -x fcitx5 >/dev/null; then
     fcitx5 -d

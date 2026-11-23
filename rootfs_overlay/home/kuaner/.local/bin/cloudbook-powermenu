@@ -3,12 +3,19 @@ set -eu
 
 # Archcraft i3's power menu, adapted to LightDM and systemd on the Cloudbook.
 theme="$HOME/.config/i3/theme/rofi"
-choice=$(printf '%s\n' ' 锁定' ' 注销' ' 睡眠' ' 重启' ' 关机' ' 切换到 Android' |
+icons="$theme/power-icons"
+choice=$(printf '%s\000icon\037%s\n' \
+    '锁定' "$icons/lock.svg" \
+    '注销' "$icons/log-out.svg" \
+    '睡眠' "$icons/moon.svg" \
+    '重启' "$icons/refresh-cw.svg" \
+    '关机' "$icons/power.svg" \
+    '安卓' "$icons/android.svg" |
     rofi -dmenu -no-custom -p 电源 -mesg "$(hostname)" -theme "$theme/powermenu.rasi") || exit 0
 case "$choice" in
-    ' 锁定') exec i3lock -c 1e222a ;;
-    ' 切换到 Android') exec /usr/local/bin/cloudbook-switch-system ;;
-    ' 注销'|' 睡眠'|' 重启'|' 关机') ;;
+    '锁定') exec "$HOME/.local/bin/cloudbook-lock" ;;
+    '安卓') exec /usr/local/bin/cloudbook-switch-system ;;
+    '注销'|'睡眠'|'重启'|'关机') ;;
     *) exit 0 ;;
 esac
 
@@ -16,8 +23,8 @@ confirm=$(printf '%s\n' '取消' '确认' |
     rofi -dmenu -no-custom -p "$choice" -mesg '确认执行此操作？' -theme "$theme/confirm.rasi") || exit 0
 [ "$confirm" = '确认' ] || exit 0
 case "$choice" in
-    ' 注销') exec i3-msg exit ;;
-    ' 睡眠') exec systemctl suspend ;;
-    ' 重启') exec systemctl reboot ;;
-    ' 关机') exec systemctl poweroff ;;
+    '注销') exec i3-msg exit ;;
+    '睡眠') exec systemctl suspend ;;
+    '重启') exec systemctl reboot ;;
+    '关机') exec systemctl poweroff ;;
 esac

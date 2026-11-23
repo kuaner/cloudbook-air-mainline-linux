@@ -156,15 +156,17 @@ esac
 if [ -f "$R/usr/lib/systemd/system/lightdm.service" ]; then
     install -D -m 0755 "$OVERLAY/usr/local/bin/cloudbook-switch-system" \
         "$R/usr/local/bin/cloudbook-switch-system"
-    for file in usr/share/applications/cloudbook-switch-system.desktop \
-        usr/share/icons/hicolor/128x128/apps/cloudbook-switch-system.png \
-        usr/share/polkit-1/actions/io.github.kuaner.cloudbook.switch-system.policy; do
-        install -D -m 0644 "$OVERLAY/$file" "$R/$file"
-    done
+    switch_policy=usr/share/polkit-1/actions/io.github.kuaner.cloudbook.switch-system.policy
+    install -D -m 0644 "$OVERLAY/$switch_policy" "$R/$switch_policy"
+    # The power menu is the desktop entry point. Clean up launchers from reused bases.
+    rm -f "$R/usr/share/applications/cloudbook-switch-system.desktop" \
+        "$R/usr/share/icons/hicolor/128x128/apps/cloudbook-switch-system.png"
     greeter_theme=/usr/share/themes/CloudBook-Greeter/gtk-3.0
     for asset in "$OVERLAY$greeter_theme/"*; do
         install -D -m 0644 "$asset" "$R$greeter_theme/${asset##*/}"
     done
+    install -D -m 0644 "$OVERLAY$LOGIN_HOME/Pictures/tokyo.png" \
+        "$R/usr/share/backgrounds/cloudbook/tokyo.png"
     # Drop the superseded defaults when rebuilding the previous desktop image.
     rm -rf "$R$LOGIN_HOME/.config/polybar" "$R$LOGIN_HOME/.config/i3/themes" \
         "$R$LOGIN_HOME/.config/i3status"
