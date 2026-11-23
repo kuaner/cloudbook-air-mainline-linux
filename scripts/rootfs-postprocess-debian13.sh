@@ -13,21 +13,29 @@ R=${ROOTFS_ROOT:-/rootfs}
 KVER=${KVER:-6.12.117-cloudbook}
 MODULES_TARBALL=${MODULES_TARBALL:-/inputs/modules-6.12.117-cloudbook.tar.gz}
 ROOT_LABEL=${ROOT_LABEL:-EMMC_ROOTFS}
+OVERLAY=/inputs/rootfs_overlay
+LOGIN_USER=kuaner
+LOGIN_HOME=/home/$LOGIN_USER
+
+# Package scripts drop privileges. A reused rootfs may have lost these modes.
+install -d -m 1777 "$R/tmp" "$R/var/tmp"
 
 # A previous run hands resolv.conf over to NetworkManager at the end. Restore
 # a real file while packages are installed so re-runs can resolve names.
-if [ ! -e "$R/etc/resolv.conf" ]; then
+if [ -L "$R/etc/resolv.conf" ] || [ ! -s "$R/etc/resolv.conf" ]; then
     rm -f "$R/etc/resolv.conf"
-    cp /etc/resolv.conf "$R/etc/resolv.conf" 2>/dev/null || true
+    cp /etc/resolv.conf "$R/etc/resolv.conf"
 fi
 
 # --- kernel modules -------------------------------------------------------
-rm -rf "$R"/usr/lib/modules/*
-rm -rf /tmp/modstage && mkdir -p /tmp/modstage
-tar -xzf "$MODULES_TARBALL" -C /tmp/modstage
+modstage=$(mktemp -d)
+trap 'rm -rf "$modstage"' EXIT
+tar -xzf "$MODULES_TARBALL" -C "$modstage"
+[ -d "$modstage/lib/modules/$KVER" ]
 mkdir -p "$R/usr/lib/modules"
-cp -a /tmp/modstage/lib/modules/. "$R/usr/lib/modules/"
-rm -rf /tmp/modstage
+rm -rf "$R/usr/lib/modules/$KVER"
+cp -a "$modstage/lib/modules/$KVER" "$R/usr/lib/modules/"
+chmod -R go-w "$R/usr/lib/modules/$KVER"
 depmod -b "$R" "$KVER"
 
 # --- MT7663S Wi-Fi/BT firmware -------------------------------------------
@@ -56,7 +64,7 @@ install -m 0644 "$patch" "$fw_dest/mt7663pr2h.bin"
 
 # The overlay can be bind-mounted from a Mac with UID 501. Give system
 # configuration its target ownership, including the /etc directory itself.
-tar -C /inputs/rootfs_overlay/etc --owner=0 --group=0 -cf - . |
+tar -C "$OVERLAY/etc" --owner=0 --group=0 --mode=go-w -cf - . |
     tar -C "$R/etc" --numeric-owner -xpf -
 
 # Switch the generic Debian 13 image to the regional archive before installing packages.
@@ -66,7 +74,7 @@ case "$KVER" in
             chroot "$R" apt-get update
             DEBIAN_FRONTEND=noninteractive chroot "$R" apt-get install -y ca-certificates
         fi
-        install -D -m 0644 /inputs/rootfs_overlay/usr/local/share/cloudbook/debian.sources \
+        install -D -m 0644 "$OVERLAY/usr/local/share/cloudbook/debian.sources" \
             "$R/etc/apt/sources.list.d/debian.sources"
         # debootstrap writes its initial mirror into the legacy file.
         : > "$R/etc/apt/sources.list"
@@ -87,9 +95,9 @@ if ! chroot "$R" dpkg-query -W -f='${Status}' alsa-ucm-conf 2>/dev/null |
     chroot "$R" apt-get update
     DEBIAN_FRONTEND=noninteractive chroot "$R" apt-get install -y alsa-ucm-conf
 fi
-if [ -d /inputs/rootfs_overlay/usr/share/alsa/ucm2 ]; then
+if [ -d "$OVERLAY/usr/share/alsa/ucm2" ]; then
     mkdir -p "$R/usr/share/alsa/ucm2"
-    tar -C /inputs/rootfs_overlay/usr/share/alsa/ucm2 --owner=0 --group=0 -cf - . |
+    tar -C "$OVERLAY/usr/share/alsa/ucm2" --owner=0 --group=0 --mode=go-w -cf - . |
         tar -C "$R/usr/share/alsa/ucm2" --numeric-owner -xpf -
 fi
 
@@ -117,47 +125,65 @@ LANGUAGE=zh_CN:zh
 EOF
 
 # --- accounts -------------------------------------------------------------
-chroot "$R" useradd -m -s /bin/bash -G sudo cloudbook 2>/dev/null || true
-echo 'cloudbook:cloudbook' | chroot "$R" chpasswd
-echo 'root:cloudbook' | chroot "$R" chpasswd
-
-# --- desktop home configuration (i3 / i3status) ---------------------------
-if [ -d /inputs/rootfs_overlay/home/cloudbook ]; then
-    mkdir -p "$R/home/cloudbook"
-    cp -a /inputs/rootfs_overlay/home/cloudbook/. "$R/home/cloudbook/"
-    chmod 700 "$R/home/cloudbook"
+if ! chroot "$R" id "$LOGIN_USER" >/dev/null 2>&1; then
+    if chroot "$R" id cloudbook >/dev/null 2>&1; then
+        # Rebuilding the previous image keeps its numeric UID and GID.
+        chroot "$R" usermod -l "$LOGIN_USER" -d "$LOGIN_HOME" -m cloudbook
+        if [ "$(chroot "$R" id -gn "$LOGIN_USER")" = cloudbook ]; then
+            chroot "$R" groupmod -n "$LOGIN_USER" cloudbook
+        fi
+    else
+        chroot "$R" useradd -m -d "$LOGIN_HOME" -s /bin/bash "$LOGIN_USER"
+    fi
 fi
-mkdir -p "$R/home/cloudbook/Pictures"
+chroot "$R" usermod -aG sudo,video "$LOGIN_USER"
+printf '%s:%s\n' "$LOGIN_USER" "${CLOUDBOOK_LOGIN_PASSWORD:-$LOGIN_USER}" | chroot "$R" chpasswd
+printf '%s\n' 'root:cloudbook' | chroot "$R" chpasswd
 
-# polybar reads its palette from colors.ini, which i3-theme rewrites on every
-# flavour change. Seed it from the i3 theme so the first login has a styled bar.
-if [ -f "$R/home/cloudbook/.config/polybar/config.ini" ]; then
-    theme=$R/home/cloudbook/.config/i3/themes/catppuccin-mocha
-    {
-        echo "[colors]"
-        sed -n 's/^set [$]\([a-z0-9]*\) #\([0-9a-fA-F]\{6\}\)$/\1 = #\2/p' "$theme"
-    } > "$R/home/cloudbook/.config/polybar/colors.ini"
-fi
-
-chown -R 1000:1000 "$R/home/cloudbook" 2>/dev/null || true
+# Report A/B boot success so U-Boot keeps the slot bootable.
+install -D -m 0755 "$OVERLAY/usr/local/sbin/cloudbook-mark-boot-successful" \
+    "$R/usr/local/sbin/cloudbook-mark-boot-successful"
 
 # Apply the 7.3 clock configuration to both desktop and headless images.
 case "$KVER" in
     7.3.*)
-        install -D -m 0755 /inputs/rootfs_overlay/usr/local/sbin/cloudbook-configure-time \
+        install -D -m 0755 "$OVERLAY/usr/local/sbin/cloudbook-configure-time" \
             "$R/usr/local/sbin/cloudbook-configure-time"
         chroot "$R" /usr/local/sbin/cloudbook-configure-time
-        # Report A/B boot success the way Android's bootctl does; without it
-        # the Rockchip bootloader clears the slot's priority on the next boot.
-        install -D -m 0755 /inputs/rootfs_overlay/usr/local/sbin/cloudbook-mark-boot-successful \
-            "$R/usr/local/sbin/cloudbook-mark-boot-successful"
-        if [ -f "$R/usr/lib/systemd/system/lightdm.service" ]; then
-            install -D -m 0755 /inputs/rootfs_overlay/usr/local/sbin/cloudbook-install-i3 \
-                "$R/usr/local/sbin/cloudbook-install-i3"
-            chroot "$R" /usr/local/sbin/cloudbook-install-i3
-        fi
         ;;
 esac
+
+if [ -f "$R/usr/lib/systemd/system/lightdm.service" ]; then
+    install -D -m 0755 "$OVERLAY/usr/local/bin/cloudbook-switch-system" \
+        "$R/usr/local/bin/cloudbook-switch-system"
+    for file in usr/share/applications/cloudbook-switch-system.desktop \
+        usr/share/icons/hicolor/128x128/apps/cloudbook-switch-system.png \
+        usr/share/polkit-1/actions/io.github.kuaner.cloudbook.switch-system.policy; do
+        install -D -m 0644 "$OVERLAY/$file" "$R/$file"
+    done
+    greeter_theme=/usr/share/themes/CloudBook-Greeter/gtk-3.0
+    for asset in "$OVERLAY$greeter_theme/"*; do
+        install -D -m 0644 "$asset" "$R$greeter_theme/${asset##*/}"
+    done
+    # Drop the superseded defaults when rebuilding the previous desktop image.
+    rm -rf "$R$LOGIN_HOME/.config/polybar" "$R$LOGIN_HOME/.config/i3/themes" \
+        "$R$LOGIN_HOME/.config/i3status"
+    rm -f "$R$LOGIN_HOME/.local/bin/i3-theme" "$R$LOGIN_HOME/.Xresources" \
+        "$R$LOGIN_HOME/.config/picom.conf" "$R$LOGIN_HOME/.config/rofi/archcraft.rasi" \
+        "$R$LOGIN_HOME/.config/rofi/catppuccin-default.rasi" \
+        "$R$LOGIN_HOME/.config/rofi/catppuccin-mocha.rasi" "$R$LOGIN_HOME/.config/rofi/LICENSE"
+    cp -a "$OVERLAY$LOGIN_HOME/." "$R$LOGIN_HOME/"
+    mkdir -p "$R$LOGIN_HOME/.local/share"
+    tar -C "$R$LOGIN_HOME/.local/share" -xf \
+        "$OVERLAY/usr/local/share/cloudbook/archcraft-desktop-assets.tar.zst"
+    chown -R "$(chroot "$R" id -u "$LOGIN_USER"):$(chroot "$R" id -g "$LOGIN_USER")" \
+        "$R$LOGIN_HOME"
+    chmod -R go-w "$R$LOGIN_HOME"
+    chmod 700 "$R$LOGIN_HOME"
+    install -D -m 0755 "$OVERLAY/usr/local/sbin/cloudbook-install-i3" \
+        "$R/usr/local/sbin/cloudbook-install-i3"
+    chroot "$R" /usr/local/sbin/cloudbook-install-i3 "$LOGIN_USER"
+fi
 
 # --- full recommended package set ----------------------------------------
 # The root filesystem is not size-constrained (8 GiB USB image, larger eMMC
@@ -172,6 +198,21 @@ case "$KVER" in
         DEBIAN_FRONTEND=noninteractive chroot "$R" apt-get install -y --fix-policy
         ;;
 esac
+
+# Reused bases may already contain xterm. Remove it after resolving Recommends.
+if [ -f "$R/usr/lib/systemd/system/lightdm.service" ]; then
+    DEBIAN_FRONTEND=noninteractive chroot "$R" apt-get purge -y xterm
+    case "$KVER" in
+        7.3.*)
+            DEBIAN_FRONTEND=noninteractive chroot "$R" apt-get install -y plymouth plymouth-label
+            theme=/usr/share/plymouth/themes/cloudbook-air
+            for asset in "$OVERLAY$theme/"*; do
+                install -D -m 0644 "$asset" "$R$theme/${asset##*/}"
+            done
+            chroot "$R" plymouth-set-default-theme cloudbook-air
+            ;;
+    esac
+fi
 
 # --- initramfs ------------------------------------------------------------
 # Debian initramfs-tools replaces the hand-written /init used by the 6.12
@@ -259,7 +300,13 @@ if [ -f "$R/usr/lib/systemd/system/zramswap.service" ]; then
 fi
 
 # --- first boot housekeeping ---------------------------------------------
-: > "$R/etc/machine-id" 2>/dev/null || true
+printf '%s\n' uninitialized > "$R/etc/machine-id"
+if [ -d "$R/var/lib/dbus" ]; then
+    ln -sfn /etc/machine-id "$R/var/lib/dbus/machine-id"
+fi
+if [ -f "$R/usr/lib/systemd/system/sshd-keygen.service" ]; then
+    rm -f "$R"/etc/ssh/ssh_host_*_key "$R"/etc/ssh/ssh_host_*_key.pub
+fi
 rm -rf "$R"/var/lib/apt/lists/*
 chroot "$R" apt-get clean 2>/dev/null || true
 rm -f "$R/var/cache/apt/pkgcache.bin" "$R/var/cache/apt/srcpkgcache.bin"
@@ -271,18 +318,5 @@ case "$KVER" in
         ln -sfn /run/NetworkManager/resolv.conf "$R/etc/resolv.conf"
         ;;
 esac
-
-# --- permission normalisation ---------------------------------------------
-# Build inputs arrive from a macOS bind mount and from tarballs produced on it;
-# both lose real Unix modes (directories 777, files 666). Strip group/other
-# write so the image never ships world-writable content. Read and execute bits
-# are untouched, so setuid binaries and private files keep their exact modes.
-chmod -R go-w "$R"
-
-# World-writable, sticky temporary directories are intentional and must keep
-# mode 1777; package scripts drop privileges (e.g. _apt) and need them.
-for d in tmp var/tmp dev/shm; do
-    [ -d "$R/$d" ] && chmod 1777 "$R/$d"
-done
 
 echo "rootfs post-processing done"

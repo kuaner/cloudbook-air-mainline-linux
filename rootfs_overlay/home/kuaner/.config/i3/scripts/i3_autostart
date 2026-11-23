@@ -1,0 +1,14 @@
+#!/bin/sh
+
+"$HOME/.config/i3/scripts/i3_appearance"
+for program in nm-applet lxpolkit; do
+    if ! pgrep -u "$(id -u)" -x "$program" >/dev/null; then
+        "$program" &
+    fi
+done
+if ! pgrep -u "$(id -u)" -x xss-lock >/dev/null; then
+    xss-lock --ignore-xss --transfer-sleep-lock -- i3lock --nofork -c 1e222a &
+fi
+if ! pgrep -u "$(id -u)" -x fcitx5 >/dev/null; then
+    fcitx5 -d
+fi

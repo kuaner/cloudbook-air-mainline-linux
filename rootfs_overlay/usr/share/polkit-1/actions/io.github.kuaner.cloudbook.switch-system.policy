@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <action id="io.github.kuaner.cloudbook.switch-system">
+    <description>Restart the CloudBook Air into Android</description>
+    <description xml:lang="zh_CN">重启 CloudBook Air 进入 Android</description>
+    <message>Administrator authentication is required to switch systems.</message>
+    <message xml:lang="zh_CN">切换系统需要管理员验证。</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/sbin/cloudbook-mark-boot-successful</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">switch-to-android</annotate>
+  </action>
+</policyconfig>

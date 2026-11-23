@@ -1,0 +1,14 @@
+# Archcraft i3's GTK, icon, and cursor themes with fonts for the eDP panel.
+Net/ThemeName "Manhattan"
+Net/IconThemeName "Luv-Folders-Dark"
+Gtk/CursorThemeName "Qogirr-Dark"
+Gtk/CursorThemeSize 24
+Gtk/FontName "Noto Sans CJK SC 10"
+Gtk/MonospaceFontName "JetBrains Mono 11"
+Net/EnableEventSounds 0
+Net/EnableInputFeedbackSounds 0
+Xft/DPI 110592
+Xft/Hinting 1
+Xft/HintStyle "hintslight"
+Xft/Antialias 1
+Xft/RGBA "none"

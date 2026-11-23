@@ -1,0 +1,7 @@
+/* Copyright (C) 2020-2026 Aditya Shakya <adi1090x@gmail.com> */
+
+/* Text Font */
+
+* {
+    font: "JetBrains Mono, feather, Noto Sans CJK SC 11";
+}

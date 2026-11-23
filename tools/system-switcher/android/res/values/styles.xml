@@ -1,0 +1,9 @@
+<resources>
+    <style name="SwitcherTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">#9bb8ff</item>
+        <item name="android:windowBackground">#1e222a</item>
+        <item name="android:statusBarColor">#1e222a</item>
+        <item name="android:navigationBarColor">#1e222a</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>

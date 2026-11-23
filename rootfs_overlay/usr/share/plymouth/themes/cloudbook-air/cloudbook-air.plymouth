@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=CloudBook Air
+Description=CloudBook Air boot splash in the Archcraft desktop palette
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/cloudbook-air
+ScriptFile=/usr/share/plymouth/themes/cloudbook-air/cloudbook-air.script

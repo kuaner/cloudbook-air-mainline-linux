@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+
+title='切换系统'
+if ! grep -qw 'androidboot.slot_suffix=_a' /proc/cmdline; then
+    exec zenity --error --title="$title" --text='请从 CloudBook Air 的 Linux A 槽启动。'
+fi
+
+if ! zenity --question --title="$title" --width=440 --default-cancel \
+    --text='<b>从 Debian Linux 切换到 Android</b>
+
+当前在 A 槽，将重启进入 B 槽。请先保存手头的工作。' \
+    --ok-label='重启到 Android' --cancel-label='取消'; then
+    exit 0
+fi
+
+if error=$(pkexec --disable-internal-agent /usr/local/sbin/cloudbook-mark-boot-successful switch-to-android 2>&1); then
+    exit 0
+else
+    status=$?
+fi
+[ "$status" -ne 126 ] || exit 0
+exec zenity --error --title="$title" --width=440 --no-markup \
+    --text="${error:-无法取得切换系统所需的管理员权限。}"

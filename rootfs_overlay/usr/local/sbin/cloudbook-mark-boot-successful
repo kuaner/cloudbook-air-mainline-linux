@@ -11,15 +11,23 @@ tries_remaining == 0 is left untouched, so the partition is not rewritten on
 every boot.
 """
 
+import fcntl
 import os
+import stat
 import struct
+import subprocess
 import sys
 import zlib
+from pathlib import Path
 
 MISC_PATHS = ("/dev/disk/by-partlabel/misc", "/dev/mmcblk0p6")
 OFFSET = 0x800
 SIZE = 32
 BACKUP = "/var/lib/cloudbook/misc-ab.bak"
+PARTITIONS = Path("/dev/disk/by-partlabel")
+# Respect shutdown inhibitors even as root. Leave kexec and soft reboot off
+# so the bootloader reads the new A/B record.
+SD_LOGIND_ROOT_CHECK_INHIBITORS = 1
 
 
 def find_misc():
@@ -41,21 +49,38 @@ def slot_index():
     return 0
 
 
-def main():
+def read_record(misc):
+    misc.seek(OFFSET)
+    data = bytearray(misc.read(SIZE))
+    if len(data) != SIZE or data[:4] != b"\x00AB0":
+        raise ValueError("启动槽位记录格式有误。")
+    if int.from_bytes(data[28:], "big") != zlib.crc32(data[:28]):
+        raise ValueError("启动槽位记录校验失败。")
+    return data
+
+
+def seal_record(data):
+    struct.pack_into(">I", data, 28, zlib.crc32(data[:28]))
+
+
+def write_record(misc, data):
+    misc.seek(OFFSET)
+    if misc.write(data) != SIZE:
+        raise OSError("启动槽位记录写入不完整。")
+    os.fsync(misc.fileno())
+    if read_record(misc) != data:
+        raise OSError("启动槽位记录读回校验失败。")
+
+
+def mark_successful():
     path = find_misc()
     if path is None:
         print("misc partition not found", file=sys.stderr)
         return 1
 
     with open(path, "r+b", buffering=0) as misc:
-        misc.seek(OFFSET)
-        data = bytearray(misc.read(SIZE))
-        if len(data) != SIZE or data[:4] != b"\x00AB0":
-            print("unexpected AvbABData header in %s" % path, file=sys.stderr)
-            return 1
-        if struct.unpack(">I", data[28:32])[0] != zlib.crc32(data[:28]) & 0xFFFFFFFF:
-            print("AvbABData checksum mismatch, refusing to write", file=sys.stderr)
-            return 1
+        fcntl.flock(misc, fcntl.LOCK_EX)
+        data = read_record(misc)
 
         idx = slot_index()
         base = 8 + idx * 4
@@ -71,19 +96,86 @@ def main():
                 backup.write(bytes(data))
 
         data[base:base + 4] = bytes([priority, 0, 1, corrupt])
-        data[28:32] = struct.pack(">I", zlib.crc32(data[:28]) & 0xFFFFFFFF)
-        misc.seek(OFFSET)
-        misc.write(bytes(data))
-        os.fsync(misc.fileno())
-        misc.seek(OFFSET)
-        readback = misc.read(SIZE)
+        seal_record(data)
+        write_record(misc, data)
 
-    if readback != bytes(data):
-        print("readback mismatch after writing %s" % path, file=sys.stderr)
-        return 1
     print("slot %s marked successful" % ("B" if idx else "A"))
     return 0
 
 
+def prepare_android_record(misc):
+    for offset in (0, 0x4000):
+        misc.seek(offset)
+        if misc.read(32) != bytes(32):
+            raise ValueError("启动控制区有待执行的命令，请先完成更新或恢复操作。")
+
+    original = read_record(misc)
+    if original[4:6] != b"\x01\x00":
+        raise ValueError("启动槽位记录版本不受支持。")
+    if original[10] != 1 or original[8] == 0:
+        raise ValueError("Linux A 槽还未确认启动成功，无法保留回退槽位。")
+    for base in (8, 12):
+        priority, tries, successful = original[base:base + 3]
+        if priority > 15 or tries > 7 or successful > 1:
+            raise ValueError("启动槽位记录中的状态值无效。")
+
+    updated = original.copy()
+    updated[8] = 14
+    updated[12:14] = bytes((15, 0 if original[14] else 3))
+    seal_record(updated)
+    return original, updated
+
+
+def switch_to_android(check_only):
+    compatible = Path("/proc/device-tree/compatible").read_bytes().split(b"\0")
+    cmdline = Path("/proc/cmdline").read_text().split()
+    if (b"zte,ecloudbook-air-24rtw" not in compatible or
+            "androidboot.slot_suffix=_a" not in cmdline):
+        raise ValueError("此功能需要从 CloudBook Air 的 Linux A 槽启动。")
+    boot = PARTITIONS / "boot_b"
+    if not stat.S_ISBLK(boot.stat().st_mode):
+        raise ValueError("找不到 Android B 槽的启动分区。")
+    with boot.open("rb") as image:
+        header = image.read(576)
+    if not header.startswith(b"ANDROID!") or b"root=LABEL=" in header[64:]:
+        raise ValueError("Android B 槽的启动镜像与预期不符。")
+
+    path = PARTITIONS / "misc"
+    if not stat.S_ISBLK(path.stat().st_mode):
+        raise ValueError("找不到 CloudBook Air 的 misc 分区。")
+    with path.open("rb" if check_only else "r+b", buffering=0) as misc:
+        fcntl.flock(misc, fcntl.LOCK_EX)
+        original, updated = prepare_android_record(misc)
+        if check_only:
+            print("Linux A → Android B: 启动镜像和槽位记录校验通过。")
+            return 0
+
+        try:
+            write_record(misc, updated)
+            subprocess.run(
+                ["/usr/bin/busctl", "--system", "--allow-interactive-authorization=no", "call",
+                 "org.freedesktop.login1", "/org/freedesktop/login1",
+                 "org.freedesktop.login1.Manager", "RebootWithFlags", "t",
+                 str(SD_LOGIND_ROOT_CHECK_INHIBITORS)],
+                check=True, capture_output=True, text=True,
+            )
+        except (OSError, ValueError, subprocess.CalledProcessError) as error:
+            try:
+                write_record(misc, original)
+            except (OSError, ValueError) as restore_error:
+                raise OSError(f"切换失败，恢复原槽位时也出错。{restore_error}") from error
+            reason = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) else error
+            raise OSError(f"切换失败，已恢复原槽位。{reason}") from error
+    return 0
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        args = sys.argv[1:]
+        if args in (["switch-to-android"], ["check-android"]):
+            sys.exit(switch_to_android(check_only=args == ["check-android"]))
+        if args:
+            sys.exit("usage: cloudbook-mark-boot-successful [check-android|switch-to-android]")
+        sys.exit(mark_successful())
+    except (OSError, ValueError) as error:
+        sys.exit(str(error))

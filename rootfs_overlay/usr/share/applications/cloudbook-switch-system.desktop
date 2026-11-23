@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=System Switcher
+Name[zh_CN]=切换系统
+Comment=Restart into Android
+Comment[zh_CN]=重启进入 Android
+Exec=/usr/local/bin/cloudbook-switch-system
+Icon=/usr/share/icons/hicolor/128x128/apps/cloudbook-switch-system.png
+Terminal=false
+Categories=System;

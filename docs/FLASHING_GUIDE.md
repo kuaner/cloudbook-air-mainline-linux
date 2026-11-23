@@ -1,10 +1,10 @@
 # CloudBook Air (CT2000-24RTW) 完整刷机与部署手册
 
 > **适用机型**：中国移动 / 中兴云电脑笔记本 `CT2000-24RTW`（主板丝印 `W620D V12.0`，SoC `RK3568B2`，4GB RAM + 32GB eMMC，无 TF 卡槽）  
-> **目标系统**：主线 Linux `6.12.117-cloudbook` + Armbian Debian 13 (Trixie) ARM64  
+> **目标系统**：主线 Linux `6.12.117-cloudbook` 或 `7.3.5-cloudbook` + Debian 13 (Trixie) ARM64\
 > **安全机制**：保留原厂签名 `idbloader` / `uboot` / `trust` 与 `Slot B` 原厂 Android 11；Linux 仅部署在 `Slot A (boot_a)`。支持 **先 U 盘零损试跑，再可选迁入内置 eMMC**，并保留随时一键还原 Android 的能力。
 >
-> **本机进展（2026-11-21）**　真机日志确认 A 槽已从 U 盘进入 Debian，黑屏时内屏控制器一直在等待面板。换用补丁 `0014` 的 6.12 镜像后，用户已看到文字登录界面。7.3.5 的 USB 根文件系统提供 LightDM 和 i3 桌面。[故障记录](LINUX_USB_BOOT_FAILURE_2026-11-21.md) · [7.3.5 桌面试跑包](USB_TEST_KIT_7.3.md)
+> **本机进展（2026-11-23）**　已验证 7.3.5 桌面试跑流程，以及使用图形工具在内置 p21 Debian 与原厂 Android 11 之间往返切换。本手册中的 v28/v29 镜像和 p20 迁移命令对应早期 6.12 布局。新版双系统从 [7.3.5 桌面试跑](USB_TEST_KIT_7.3.md) 和 [p20/p21 双系统分区](P20_P21_DUAL_BOOT_PLAN.md) 开始。
 
 ---
 
@@ -152,6 +152,8 @@ Linux `6.12` 主线 `mt7663s` 驱动加载以下两个固件文件：
 ---
 
 ## 4. 阶段一：制作 USB 3.0 启动 U 盘（推荐首测，不改原厂数据）
+
+使用新版 7.3.5 桌面时，按 [U 盘试跑步骤](USB_TEST_KIT_7.3.md#2-制作-u-盘linux-主机) 写入 `rootfs-7.3.5-cloudbook-usb.ext4`，配套引导文件为 `boot_linux_73_v30_auto.img`。下文保留 6.12 的构建与试跑步骤。
 
 ### 4.0 最快路线：直接写预构建 USB 镜像
 
@@ -317,10 +319,12 @@ cat /proc/cmdline         # 应含 androidboot.slot_suffix=_a
 
 ## 6. 阶段三（可选）：迁移 Rootfs 到内置 32GB eMMC（免插 U 盘日常使用）
 
-> [!CAUTION]
-> 此步骤会格式化内置 eMMC 的 `userdata` 分区 (`/dev/mmcblk0p20`，约 22 GiB)，原厂 Android 的用户数据会被清空（系统分区 `boot_b`/`super` 保留不变）。**请务必先确认不再需要 Android 内数据或先做好整分区备份！**
+**当前双系统布局**保留 `p20 userdata` 给 Android，Debian 根盘使用 `p21 rootfs`。已有 p21 时，核对盘符和卷标后按 [写入 Linux 根文件系统](P20_P21_DUAL_BOOT_PLAN.md#7-创建-linux-根文件系统) 部署 `rootfs-7.3.5-cloudbook-emmc.tar.zst`。
 
-### 6.1 准备 `v29` eMMC 引导镜像
+> [!CAUTION]
+> 下方 6.1–6.3 是旧布局的迁移流程，会格式化 `userdata`（`/dev/mmcblk0p20`），清除原厂 Android 的用户数据。使用 p20/p21 双系统布局时，请使用上方链接中的 p21 部署步骤。
+
+### 6.1 旧布局：准备 `v29` eMMC 引导镜像
 * **路线 A**：直接使用 `artifacts/boot_linux_612_v29_emmc.img`；
 * **路线 B**：在主机用默认 `v29` 配置编译 DTB 并打包：
   ```bash
@@ -328,7 +332,7 @@ cat /proc/cmdline         # 应含 androidboot.slot_suffix=_a
   ./build_boot_linux_612.sh "$PWD/artifacts/boot_linux_612_v29_emmc.img"
   ```
 
-### 6.2 在 U 盘启动的 Linux 上克隆系统到 `/dev/mmcblk0p20`
+### 6.2 旧布局：在 U 盘启动的 Linux 上克隆系统到 `/dev/mmcblk0p20`
 将 `boot_linux_612_v29_emmc.img` 与锁定 `slot_a` 用的 `misc` 拷入正在运行的 U 盘 Linux（如 `/tmp/`），然后在笔记本本地终端执行：
 
 ```bash
@@ -368,7 +372,7 @@ sha256sum /tmp/boot_linux_612_v29_emmc.img
 head -c "$(stat -c %s /tmp/boot_linux_612_v29_emmc.img)" /dev/mmcblk0p11 | sha256sum
 ```
 
-### 6.3 试跑验证并锁定 `Slot A`
+### 6.3 旧布局：试跑验证并锁定 `Slot A`
 1. 拔掉 U 盘，执行 `sudo reboot`，确认无 U 盘也能直接进入桌面且 `findmnt /` 显示 `/dev/mmcblk0p20`。
 2. **重要（防止重启几次后退回 Android）**：原厂 SPL + U-Boot 每次冷启动会扣减 `2` 次 `tries_remaining`！确认 eMMC 启动稳定后，在主机生成并传到板子上写入永久锁定 `Slot A` 的 `misc`（`priority=15, tries=0, successful=1`）：
    ```bash
@@ -382,6 +386,8 @@ head -c "$(stat -c %s /tmp/boot_linux_612_v29_emmc.img)" /dev/mmcblk0p11 | sha25
 ---
 
 ## 7. 系统初始化与音视频/桌面调优
+
+新版 7.3.5 桌面已包含 Archcraft i3 配置、Xfce Terminal、Wi-Fi 菜单和 Linux 切换工具。[登录和常用快捷键](USB_TEST_KIT_7.3.md#4-首次启动预期) · [图形切换与安卓版安装](../tools/system-switcher/README.md)
 
 进系统后推荐按以下清单完成桌面环境与硬件解码设置：
 

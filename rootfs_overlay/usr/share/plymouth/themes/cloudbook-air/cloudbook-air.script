@@ -1,0 +1,91 @@
+Window.SetBackgroundTopColor(0.078, 0.090, 0.114);
+Window.SetBackgroundBottomColor(0.118, 0.133, 0.165);
+
+mark = Image("cloud.png");
+title = Image.Text("CloudBook Air", 0.91, 0.93, 0.96, 1, "Sans 30");
+track = Image("track.png");
+highlight = Image("highlight.png");
+
+mark_sprite = Sprite(mark);
+title_sprite = Sprite(title);
+track_sprite = Sprite(track);
+highlight_sprite = Sprite(highlight);
+prompt_sprite = Sprite();
+entry_sprite = Sprite();
+message_sprite = Sprite();
+
+phase = 0;
+asking = 0;
+
+fun refresh() {
+    center_x = Window.GetX() + Window.GetWidth() / 2;
+    center_y = Window.GetY() + Window.GetHeight() / 2;
+    track_x = center_x - track.GetWidth() / 2;
+
+    mark_sprite.SetPosition(center_x - mark.GetWidth() / 2, center_y - 100, 0);
+    title_sprite.SetPosition(center_x - title.GetWidth() / 2, center_y - 14, 0);
+    track_sprite.SetPosition(track_x, center_y + 58, 0);
+
+    if (!asking) {
+        # A moving highlight indicates activity without guessing a percentage.
+        global.phase += 0.055;
+        if (phase > 6.283185) global.phase -= 6.283185;
+        offset = (track.GetWidth() - highlight.GetWidth()) * (1 - Math.Cos(phase)) / 2;
+        highlight_sprite.SetPosition(track_x + offset, center_y + 58, 1);
+    }
+
+    if (prompt_image)
+        prompt_sprite.SetPosition(center_x - prompt_image.GetWidth() / 2, center_y + 49, 1);
+    if (entry_image)
+        entry_sprite.SetPosition(center_x - entry_image.GetWidth() / 2, center_y + 80, 1);
+    if (message_image)
+        message_sprite.SetPosition(center_x - message_image.GetWidth() / 2,
+                                   Window.GetY() + Window.GetHeight() - message_image.GetHeight() - 32, 1);
+}
+
+fun show_prompt(prompt, entry) {
+    global.asking = 1;
+    global.prompt_image = Image.Text(prompt, 0.91, 0.93, 0.96, 1, "Sans 13", "center");
+    prompt_sprite.SetImage(prompt_image);
+    prompt_sprite.SetOpacity(1);
+    entry_sprite.SetOpacity(0);
+    if (entry != "") {
+        global.entry_image = Image.Text(entry, 0.85, 0.43, 0.54, 1, "Sans 13");
+        entry_sprite.SetImage(entry_image);
+        entry_sprite.SetOpacity(1);
+    }
+    track_sprite.SetOpacity(0);
+    highlight_sprite.SetOpacity(0);
+}
+
+fun show_password(prompt, bullets) {
+    entry = "";
+    for (i = 0; i < bullets && i < 24; i++) entry += "•";
+    show_prompt(prompt, entry);
+}
+
+fun show_normal() {
+    global.asking = 0;
+    prompt_sprite.SetOpacity(0);
+    entry_sprite.SetOpacity(0);
+    track_sprite.SetOpacity(1);
+    highlight_sprite.SetOpacity(1);
+}
+
+fun show_message(text) {
+    global.message = text;
+    global.message_image = Image.Text(text, 0.70, 0.74, 0.80, 1, "Sans 13", "center");
+    message_sprite.SetImage(message_image);
+    message_sprite.SetOpacity(1);
+}
+
+fun hide_message(text) {
+    if (text == message) message_sprite.SetOpacity(0);
+}
+
+Plymouth.SetRefreshFunction(refresh);
+Plymouth.SetDisplayNormalFunction(show_normal);
+Plymouth.SetDisplayPasswordFunction(show_password);
+Plymouth.SetDisplayQuestionFunction(show_prompt);
+Plymouth.SetDisplayMessageFunction(show_message);
+Plymouth.SetHideMessageFunction(hide_message);

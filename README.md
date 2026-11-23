@@ -1,20 +1,24 @@
-# ZTE CloudBook Air 14" (CT2000-24RTW) 主线 Linux 6.12 移植项目
+# ZTE CloudBook Air 14" (CT2000-24RTW) 主线 Linux 移植项目
 
 > **目标机型**：中国移动 / 中兴云电脑笔记本 `CT2000-24RTW`（主板丝印 `W620D V12.0`）  
 > **硬件平台**：Rockchip `RK3568B2` · 4GB LPDDR4 · 32GB eMMC（无 TF 卡槽）· BOE `NV140WUM-N44` 1920×1200@60Hz eDP · MT7663S SDIO Wi-Fi/BT  
-> **当前状态**：✅ **主线 Linux `6.12.117 LTS` + Armbian Debian 13 (Trixie) 已固化至内置 eMMC，日常桌面、Wi-Fi/蓝牙、PD 充电、合盖休眠与 H.264 视频硬解均可稳定使用。**
+> **当前状态**：保留主线 Linux `6.12.117 LTS` 作为移植基线。`7.3.5-cloudbook` 提供新版 Debian 13 i3 桌面。已在真机上用图形工具往返切换 eMMC 上的 Debian 与原厂 Android 11。
 
 ---
 
 > **想直接给同款机器刷机？** 请直接阅读保姆级分步操作手册：**[docs/FLASHING_GUIDE.md](docs/FLASHING_GUIDE.md)**（涵盖：前置校验与冷备份 → 成品包/从零编译路线 → U 盘免损首测 → 内置 eMMC 迁移 → 桌面与硬件解码配置 → 救砖/还原 Android）。
+
+- [7.3.5 桌面构建、启动镜像与电源验证范围](mainline-7.3/README.md)
+- [常用快捷键、关机、锁屏与 Wi-Fi](docs/USB_TEST_KIT_7.3.md#4-首次启动预期)
+- [Debian 与 Android 图形切换、APK 构建与 ADB 授权](tools/system-switcher/README.md)
 
 ## 一、 架构亮点与安全原则
 
 本机已启用硬件熔断安全启动（`fuse.programmed=1`、`androidboot.secureboot=1`），`idbloader`（`RKSS`）与 `uboot_a/b`、`trust_a/b` 均带有硬件/RSA-2048 签名，但原厂 U-Boot 对 `boot_a`/`boot_b` 不拦截未签名内核。因此本项目采用 **“保留原厂签名 Bootloader，双槽独立共存”** 的零变砖架构：
 
 * **Slot B (`boot_b`, `/dev/mmcblk0p12`)**：完整保留原厂 Android 11（可随时回退或一键还原）。
-* **Slot A (`boot_a`, `/dev/mmcblk0p11`)**：运行主线 Linux `6.12.117-cloudbook` Android Boot Image v2。
-* **Rootfs (`/dev/mmcblk0p20`, `LABEL=EMMC_ROOTFS`)**：Armbian Debian 13 (Trixie) ARM64 桌面系统（LightDM + i3wm + Panfrost）。
+* **Slot A (`boot_a`, `/dev/mmcblk0p11`)**：运行以 Android Boot Image v2 打包的主线 Linux `6.12.117-cloudbook` 或 `7.3.5-cloudbook`。
+* **双系统分区**：p20 保留原厂 Android 的 `userdata`，p21 `rootfs`（`LABEL=EMMC_ROOTFS`）存放 Debian 13 ARM64 桌面。U 盘试跑使用 `LABEL=ROOTFS`。[实机分区与迁移记录](docs/P20_P21_DUAL_BOOT_PLAN.md)
 * **绝对红线**：严禁向 eMMC 前 8 MiB (`idbloader`)、`uboot_a/b`、`trust_a/b`、`security` 写入未签名开源固件；Type-C 旁边的 **USB-A 接口** 物理连接 `dwc3@fcc00000` OTG（唯一 `Rockusb`/`UMS` 刷机口）。
 
 ---
@@ -64,6 +68,9 @@
 │   ├── OTG_RECOVERY.md                    # OTG Rockusb / UMS / UART 热键恢复手册
 │   └── cloudbook-air-mainline/            # P0~P4 阶段详细排障与工程记录
 ├── rootfs_overlay/                        # 板级配置模板（背光 udev、触控板、LightDM、合盖休眠、RK809 ALSA UCM2 路由）
+├── scripts/build-rootfs-735.sh             # 重建 7.3.5 桌面 USB/eMMC 根镜像与通用引导镜像
+├── scripts/build-system-switcher-apk.sh   # 本地构建 Android 切换工具 APK
+├── tools/system-switcher/                 # 双系统切换说明及 Android 源码
 ├── build_kernel_612.sh                    # 一键应用补丁并编译 Image / DTB（LLVM/Clang）
 ├── build_boot_linux_612.sh                # 一键打包 Android Boot Image v2 (boot_a)
 ├── pack_boot_linux.py                     # Rockchip RSCE + Android boot v2 打包脚本

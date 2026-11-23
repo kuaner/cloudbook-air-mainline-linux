@@ -1,9 +1,11 @@
 # P20/P21 双系统分区方案
 
-> 状态：设计稿，未执行  
-> 日期：2026-11-22  
+> 状态：已在真机部署并验证图形双向切换\
+> 最近验证：2026-11-23\
 > 目标设备：ZTE CloudBook Air CT2000-24RTW（RK3568B2）  
 > 前提：继续保留原厂签名的 idbloader、U-Boot、Trust 和现有 A/B 启动机制。
+
+本机读回的 `p20 userdata` 起始 LBA 为 `15,325,184`，大小为 `16,777,216` 扇区（8 GiB）。`p21 rootfs` 起始 LBA 为 `32,102,400`，大小为 `28,968,927` 扇区（约 13.8 GiB）。已确认原厂 Android B 启动并挂载 `/data`，Debian A 以 `/dev/mmcblk0p21` 为根盘。后续分区表与命令仍保留原始规划示例，重刷已有双系统的 Debian 时可直接使用现有 p21。[图形切换实测记录](../tools/system-switcher/README.md)
 
 ## 1. 目标
 
@@ -146,7 +148,7 @@ sudo dd if=/dev/zero of=/dev/mmcblk0p20 bs=1M count=64 conv=fsync
 
 ## 7. 创建 Linux 根文件系统
 
-格式化 `p21` 并写入 Linux rootfs：
+先确认 `findmnt -n -o SOURCE /` 显示当前从 U 盘运行，再核对 `lsblk -o NAME,SIZE,LABEL,PARTLABEL,MOUNTPOINTS`。首次创建 p21 或确认要清空现有 Linux 根盘时，格式化 p21 并挂载：
 
 ```bash
 sudo mkfs.ext4 -F -L EMMC_ROOTFS /dev/mmcblk0p21
@@ -169,10 +171,11 @@ sudo rsync -axHAWX --numeric-ids \
     / /mnt/emmc/
 ```
 
-也可以解压已有的 rootfs 包：
+也可以解压 [7.3.5 桌面构建](../mainline-7.3/README.md#7-debian-桌面与-rootfs-构建) 生成的 eMMC 根镜像。将下方路径替换为构建的输出目录：
 
 ```bash
-sudo tar -I zstd -xf artifacts/7.3/rootfs-7.3.5-cloudbook.tar.zst -C /mnt/emmc
+sudo tar --numeric-owner --xattrs --acls -I zstd \
+    -xf artifacts/7.3/desktop-kuaner/rootfs-7.3.5-cloudbook-emmc.tar.zst -C /mnt/emmc
 ```
 
 确认 `/mnt/emmc/etc/fstab` 使用：
@@ -190,6 +193,8 @@ sudo umount /mnt/emmc
 ```
 
 ## 8. 设置启动槽
+
+已验证可启动的双系统可以使用「切换系统」切槽；下方保留初次安装和恢复时手动设置槽位的说明。[应用与授权](../tools/system-switcher/README.md)
 
 分区完成后再处理 `misc`：
 

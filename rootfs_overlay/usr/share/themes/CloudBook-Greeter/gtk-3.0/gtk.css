@@ -1,0 +1,9 @@
+@import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained.css");
+
+/* Center the label against the full panel even when the clock changes width. */
+#menubar {
+    background-image: url("cloudbook.png");
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 72px 20px;
+}

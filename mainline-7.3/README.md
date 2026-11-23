@@ -79,7 +79,7 @@ make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
 
 > **Wi-Fi/BT 只使用 W103D 补丁集，不使用主线原生 mt7663s。** 原生驱动在本机同固件上存在已复现的问题（重启后固件挂死、P2P/ROC/sched_scan 触发异常、2.4G↔5G 切频认证超时、Wi-Fi/BT eFuse 初始化竞争），W103D 补丁即为此而存在，不作为可选替代。
 
-1. USB 根盘已启动，eDP 内屏已进入 i3 桌面。当前试机尚未覆盖 eMMC 根盘与外接 HDMI。
+1. USB 根盘已启动，eDP 内屏已进入 i3 桌面。后续双系统测试也确认 Debian 能挂载 eMMC `p21`。外接 HDMI 尚待验证。
 2. 从本机 Android B 提取配套 MT7663 固件后，5 GHz 通过 12 轮双向传输校验，2.4 GHz 自动回退也通过了传输测试。此前的 ACK 不足发生在使用旧固件时。蓝牙控制器已上电。
 3. 电池已确认充电和放电，状态栏使用板载 SBS 的实时电量与状态。合盖休眠仍需单独测试。
 4. GStreamer 指定 `v4l2slh265dec` 已输出 720p HEVC 样本的全部 48 帧。1080p30 的 H.264 和 HEVC 样本各 60 帧，经指定硬解组件解码后，整段 I420 输出均与 FFmpeg 软件解码的 SHA-256 一致。完整的 `fluster -p hevc` 一致性测试仍待运行。
@@ -96,9 +96,9 @@ make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
   - 新增 `Documentation/devicetree/bindings/power/supply/southchip,sc2021.yaml`
 - 仅剩 `/pmic@20/codec`（`rockchip,rk817-codec`）无上游绑定，属于上游缺口，不影响功能
 
-## 7. U 盘试跑包（rootfs）
+## 7. Debian 桌面与 rootfs 构建
 
-`artifacts/7.3/` 里还有一套可直接试跑的 rootfs：
+`artifacts/7.3/` 下可复用的早期根镜像及配套引导文件如下。
 
 | 文件 | 说明 |
 | :--- | :--- |
@@ -106,7 +106,24 @@ make ARCH=arm64 LLVM=1 -j$(nproc) DTC_FLAGS="-@" \
 | `rootfs-7.3.5-cloudbook.tar.zst` | 同一 rootfs 的 tar 包 |
 | `boot_linux_73_v28_usb.img` | 写入 `boot_a`，`root=LABEL=ROOTFS` |
 
-通用镜像默认登录 i3，采用 Catppuccin Mocha 主题。点顶栏网络图标选择 Wi-Fi，按 `Win+D` 打开应用菜单。时区为上海，首选 NTP 服务器为 `ntp.aliyun.com`。详见 [U 盘试跑记录](../docs/USB_TEST_KIT_7.3.md)。
+新版桌面在 LightDM 中使用 `kuaner` 登录，初始密码为 `kuaner`。首次进入 i3 会加载 Archcraft 配置、Polybar、中文 Rofi 和深色 GTK 主题。按 `Win+D` 打开应用菜单，按 `Win+Enter` 打开 Xfce Terminal，点顶栏网络图标选择 Wi-Fi。时区为 `Asia/Shanghai`，首选 NTP 服务器为 `ntp.aliyun.com`。[桌面快捷键与 U 盘试跑记录](../docs/USB_TEST_KIT_7.3.md)
+
+用 Docker 从已有的 Debian 13 桌面 tar 包和本地 v30 `#10` 内核产物生成新镜像：
+
+```bash
+./scripts/build-rootfs-735.sh artifacts/7.3/rootfs-7.3.5-cloudbook.tar.zst artifacts/7.3/desktop-kuaner
+```
+
+构建需要可运行 ARM64 容器的 Docker、上述 Debian 13 LightDM 基础 tar 包、本地 `#10/v30` 内核与模块，以及从本机导出的 `artifacts/extracted_resource.img`。可通过 `CLOUDBOOK_LOGIN_PASSWORD` 设置初始密码，通过 `CLOUDBOOK_V30_INPUTS` 指定内核产物目录。重用旧镜像时，脚本会迁移 `cloudbook` 账户并保留其 UID/GID，将默认终端设为 Xfce Terminal，然后移除 `xterm`。
+
+| 产物 | 用途 |
+| --- | --- |
+| `rootfs-7.3.5-cloudbook-usb.ext4` / `.ext4.zst` | 8 GiB USB 根镜像，卷标 `ROOTFS` |
+| `rootfs-7.3.5-cloudbook-emmc.tar.zst` | 部署到卷标为 `EMMC_ROOTFS` 的 Linux 分区，双系统布局使用 p21 |
+| `boot_linux_73_v30_auto.img` | A 槽引导镜像，有匹配的 `ROOTFS` U 盘时优先使用它，否则挂载 `EMMC_ROOTFS` |
+| `SHA256SUMS` | 四个文件的本地校验清单 |
+
+引导镜像启用 Plymouth CloudBook Air 动画并隐藏内核企鹅。按 `Esc` 可查看启动信息。LightDM 顶部的 `cloudbook` 标识按整条面板居中。桌面镜像也会安装带图标的 Linux 切换工具，安卓版单独构建安装。[双系统切换说明](../tools/system-switcher/README.md)
 
 制作同配置的本地根镜像时，把自己设备 `vendor_b` 的 `/etc/firmware/WIFI_RAM_CODE_MT7663.bin` 和 `mt7663_patch_e2_hdr.bin` 一起放入构建环境的 `/inputs/firmware/7.3.5-cloudbook/`，也可用 `MT7663_VENDOR_FIRMWARE_DIR` 指定目录。`scripts/rootfs-postprocess-debian13.sh` 按驱动所需文件名安装这两个文件。省略版本目录与覆盖变量时，脚本使用 `/inputs/firmware/` 中原有的发行版固件。
 

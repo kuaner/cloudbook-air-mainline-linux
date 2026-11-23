@@ -1,0 +1,87 @@
+exec --no-startup-id ~/.config/i3/scripts/i3_autostart
+# CloudBook Air (CT2000-24RTW) default i3 configuration
+# Mod4 (Windows key) is the modifier, matching the author's desktop setup.
+
+set $mod Mod4
+font pango:JetBrains Mono, Noto Sans CJK SC 10
+
+# Archcraft i3 color palette. See theme/ARCHCRAFT-LICENSE.
+client.focused           #da6e89 #da6e89 #1e222a #98c379 #da6e89
+client.focused_inactive  #61afef #61afef #1e222a #98c379 #61afef
+client.unfocused         #292e39 #292e39 #c8ccd4 #98c379 #292e39
+client.urgent            #c678dd #c678dd #c8ccd4 #98c379 #c678dd
+client.placeholder       #1e222a #1e222a #c8ccd4 #98c379 #1e222a
+client.background        #1e222a
+default_border pixel 2
+gaps inner 10
+smart_gaps off
+
+# Terminal and launchers
+bindsym $mod+Return exec xfce4-terminal
+bindsym $mod+n exec xfce4-terminal --title=Wi-Fi -x nmtui-connect
+bindsym $mod+d exec ~/.config/i3/scripts/rofi_launcher
+bindsym $mod+Shift+d exec ~/.config/i3/scripts/rofi_runner
+bindsym $mod+Shift+f exec pcmanfm
+# Chinese input method (Ctrl+Space toggles between pinyin and keyboard).
+
+# Window management
+bindsym $mod+q kill
+bindsym $mod+f fullscreen toggle
+bindsym $mod+Shift+space floating toggle
+bindsym $mod+h split h
+bindsym $mod+v split v
+bindsym $mod+s layout stacking
+bindsym $mod+w layout tabbed
+bindsym $mod+e layout toggle split
+bindsym $mod+Shift+c reload
+bindsym $mod+Shift+r restart
+bindsym $mod+Shift+e exec --no-startup-id ~/.local/bin/cloudbook-powermenu
+
+# Focus and move
+bindsym $mod+Left focus left
+bindsym $mod+Down focus down
+bindsym $mod+Up focus up
+bindsym $mod+Right focus right
+bindsym $mod+Shift+Left move left
+bindsym $mod+Shift+Down move down
+bindsym $mod+Shift+Up move up
+bindsym $mod+Shift+Right move right
+
+# Workspaces
+set $ws1 "1"
+set $ws2 "2"
+set $ws3 "3"
+set $ws4 "4"
+set $ws5 "5"
+set $ws6 "6"
+set $ws7 "7"
+set $ws8 "8"
+bindsym $mod+1 workspace $ws1
+bindsym $mod+2 workspace $ws2
+bindsym $mod+3 workspace $ws3
+bindsym $mod+4 workspace $ws4
+bindsym $mod+5 workspace $ws5
+bindsym $mod+6 workspace $ws6
+bindsym $mod+7 workspace $ws7
+bindsym $mod+8 workspace $ws8
+bindsym $mod+Shift+1 move container to workspace $ws1
+bindsym $mod+Shift+2 move container to workspace $ws2
+bindsym $mod+Shift+3 move container to workspace $ws3
+bindsym $mod+Shift+4 move container to workspace $ws4
+bindsym $mod+Shift+5 move container to workspace $ws5
+bindsym $mod+Shift+6 move container to workspace $ws6
+bindsym $mod+Shift+7 move container to workspace $ws7
+bindsym $mod+Shift+8 move container to workspace $ws8
+
+# Audio and backlight
+bindsym XF86AudioRaiseVolume exec --no-startup-id ~/.local/bin/cloudbook-volume up
+bindsym XF86AudioLowerVolume exec --no-startup-id ~/.local/bin/cloudbook-volume down
+bindsym XF86AudioMute exec --no-startup-id ~/.local/bin/cloudbook-volume mute
+bindsym XF86MonBrightnessUp exec --no-startup-id ~/.local/bin/cloudbook-brightness up
+bindsym XF86MonBrightnessDown exec --no-startup-id ~/.local/bin/cloudbook-brightness down
+
+# Lock and screenshot
+bindsym $mod+Shift+x exec i3lock -c 1e222a
+bindsym Print exec scrot '%Y-%m-%d-%H%M%S.png' -e 'mv $f ~/Pictures/'
+
+exec_always --no-startup-id ~/.config/i3/scripts/i3_bar

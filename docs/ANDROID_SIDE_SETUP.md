@@ -1,6 +1,6 @@
 # eCloudBook Air Android Side Setup
 
-Last applied: 2026-11-22
+ADB and switcher last verified: 2026-11-23
 
 ## Device
 
@@ -8,7 +8,7 @@ Last applied: 2026-11-22
 - Device: `rk3568_r_w600d2`
 - Android: 11
 - Serial: `291005950753`
-- Current network ADB endpoint: `192.168.123.128:5555`
+- Network ADB: TCP port `5555`. Replace the IP in the examples with the device's current address.
 - Root: available via `su 0`
 
 ## ADB persistence
@@ -44,8 +44,17 @@ service.adb.tcp.port=5555
 init.svc.adbd=running
 ```
 
-No host public key was preloaded. The host key is already authorized in
-`/data/misc/adb`; preloading it would not survive a userdata reset anyway.
+The Android switcher requires the RSA-authenticated form of this TCP listener.
+On this userdebug build, `ro.adb.secure=1` is loaded from `/data/local.prop`
+at boot. Both the host and the switcher use their own authorized public keys.
+The switcher connects to `127.0.0.1:5555` and uses the device's `su 0`.
+
+When manually preloading a host public key into `/data/misc/adb/adb_keys`,
+write one key per line and end the file with a newline. A missing newline
+caused Android to append the switcher's authorized key to the host's line.
+After separating the two keys, the switcher retained its authorization across
+reboot. Select 「一律允许」 when Android prompts for the switcher's key for the
+first time. [Switcher setup and usage](../tools/system-switcher/README.md)
 
 An earlier reboot test was done with `persist.vendor.adbmode.enable=0`; that
 left port 5555 closed. The vendor switch above is the selected mechanism for
@@ -63,6 +72,7 @@ adb -s 192.168.123.128:5555 shell getprop persist.sys.adb_enable
 adb -s 192.168.123.128:5555 shell getprop persist.internet_adb_enable
 adb -s 192.168.123.128:5555 shell getprop persist.vendor.adbmode.enable
 adb -s 192.168.123.128:5555 shell getprop service.adb.tcp.port
+adb -s 192.168.123.128:5555 shell getprop ro.adb.secure  # 1 for the switcher
 ```
 
 ## Desktop

@@ -3,17 +3,19 @@
 > U-Boot 从内置 eMMC 的 A 槽加载 7.3.5 内核，Debian 桌面系统放在 U 盘上。Android B 槽用作回退。
 > 系统：Debian 13 (trixie) arm64 + 内核 `7.3.5-cloudbook`（VDPU346 + 全部板级补丁）
 
-## 1. 文件（`artifacts/7.3/`）
+## 1. 新版桌面试跑文件
+
+`scripts/build-rootfs-735.sh` 将以下文件写入指定的输出目录。构建命令和本地输入见 [7.3.5 桌面与 rootfs 构建](../mainline-7.3/README.md#7-debian-桌面与-rootfs-构建)。
 
 | 文件 | 用途 |
 | :--- | :--- |
-| `boot_linux_73_v28_usb.img` | A 槽引导镜像，使用本机 `boot_b` 的 RSCE 模板和在 6.12 上验证过的 initramfs，可识别整盘 `/dev/sda` 和分区 `/dev/sda1` |
-| `rootfs-7.3.5-cloudbook.ext4` | 8 GiB 桌面根文件系统，卷标 `ROOTFS`，含 RK809 UCM2 耳机自动切换配置，可直接写到专用 U 盘 |
-| `rootfs-7.3.5-cloudbook.ext4.zst` | 同一文件系统的压缩版 |
-| `rootfs-7.3.5-cloudbook.tar.zst` | 同一套 rootfs 的 tar 包（分区大小可自选，含 RK809 UCM2） |
-| `modules-7.3.5-cloudbook.tar.gz` | 内核模块（rootfs 内已安装，备用） |
-| `Image-7.3.5-cloudbook`、`*.dtb`、`config-7.3.5-cloudbook` | 内核/设备树/配置 |
+| `boot_linux_73_v30_auto.img` | 写入 `boot_a`，优先查找 `ROOTFS` U 盘，未找到时挂载 `EMMC_ROOTFS` |
+| `rootfs-7.3.5-cloudbook-usb.ext4` | 8 GiB 整盘 ext4，卷标 `ROOTFS`，可直接写到专用 U 盘 |
+| `rootfs-7.3.5-cloudbook-usb.ext4.zst` | 同一文件系统的压缩版 |
+| `rootfs-7.3.5-cloudbook-emmc.tar.zst` | 同一桌面的 eMMC 根镜像，默认挂载卷标为 `EMMC_ROOTFS` |
 | `SHA256SUMS` | 校验和 |
+
+下文 2026-11-21 和 2026-11-22 的测试记录还引用了早期镜像 `boot_linux_73_v28_usb.img`、`rootfs-7.3.5-cloudbook.ext4` 及 `rootfs-7.3.5-cloudbook.tar.zst`。
 
 ## 2. 制作 U 盘（Linux 主机）
 
@@ -21,10 +23,10 @@
 
 ### 方式 A　把镜像写到专用 U 盘
 
-本机使用整盘 ext4。整盘写入将覆盖 U 盘上原有的系统和文件。先卸载目标 U 盘上的文件系统，再从 `artifacts/7.3/` 运行以下命令。
+本机使用整盘 ext4。整盘写入将覆盖 U 盘上原有的系统和文件。先卸载目标 U 盘上的文件系统，再从镜像输出目录运行以下命令。
 
 ```bash
-sudo dd if=rootfs-7.3.5-cloudbook.ext4 of=/dev/sdX bs=4M status=progress conv=fsync
+sudo dd if=rootfs-7.3.5-cloudbook-usb.ext4 of=/dev/sdX bs=4M status=progress conv=fsync
 sudo blkid -p /dev/sdX  # LABEL="ROOTFS"，TYPE="ext4"
 ```
 
@@ -35,7 +37,8 @@ sudo parted -s /dev/sdX mklabel gpt
 sudo parted -s /dev/sdX mkpart primary ext4 1MiB 100%
 sudo mkfs.ext4 -L ROOTFS /dev/sdX1
 sudo mkdir -p /mnt/cb && sudo mount /dev/sdX1 /mnt/cb
-sudo tar -I zstd -xf rootfs-7.3.5-cloudbook.tar.zst -C /mnt/cb
+sudo tar --numeric-owner --xattrs --acls -I zstd -xf rootfs-7.3.5-cloudbook-emmc.tar.zst -C /mnt/cb
+sudo sed -i 's/^LABEL=EMMC_ROOTFS /LABEL=ROOTFS /' /mnt/cb/etc/fstab
 sync && sudo umount /mnt/cb
 ```
 
@@ -47,22 +50,37 @@ sudo blkid /dev/sdX1   # 应显示 LABEL="ROOTFS"
 
 ## 3. 写入 `boot_a` 并首次启动
 
-先备份当前的 `boot_a` 和 `misc`，核对 B 槽的 successful 标志。将 `boot_linux_73_v28_usb.img` 写入 `boot_a` 后读回校验。基于设备当时的 `misc` 更新 A 槽试启动次数为 3，保留其他启动数据，读回校验后再重启。设备恢复 Android B 时可使用普通网络 ADB。
+先备份当前的 `boot_a` 和 `misc`，核对 B 槽的 successful 标志。将 `boot_linux_73_v30_auto.img` 写入 `boot_a` 后读回校验。基于设备当时的 `misc` 更新 A 槽试启动次数为 3，保留其他启动数据，读回校验后再重启。设备恢复 Android B 时可使用普通网络 ADB。已写入 `boot_linux_73_v30_auto.img` 且当前选择 A 槽时，插着带 `ROOTFS` 卷标的 U 盘重启即可再次试跑。
 
 ## 4. 首次启动预期
 
-- UART（`115200 8N1`）：`Linux version 7.3.5-cloudbook`、`CLOUDBOOK found ROOTFS at ...`、systemd 启动
-- 屏幕：LightDM 登录界面，默认会话为 i3，使用 Catppuccin Mocha 主题
+- UART（`115200 8N1`）：`Linux version 7.3.5-cloudbook`、`CLOUDBOOK USB root found at ...`、systemd 启动
+- 屏幕：CloudBook Air 启动画面，随后进入 LightDM。登录界面顶部的 `cloudbook` 标识居中，默认会话为 Archcraft 配色的 i3。
 - 账户：
 
 | 账户 | 密码 |
 | :--- | :--- |
-| `cloudbook`（sudo） | `cloudbook` |
+| `kuaner`（sudo） | `kuaner`，可由构建时的 `CLOUDBOOK_LOGIN_PASSWORD` 覆盖 |
 | `root` | `cloudbook` |
 
 **首次登录后请改密码**：`passwd`。
 
-登录后，点顶部网络图标选择 Wi-Fi。按 `Win+D` 打开应用菜单，可搜索 Firefox 和文件管理器。`Win+Shift+F` 直接打开文件管理器，`Win+Enter` 打开终端，`Win+N` 打开无线连接列表。通用镜像不含个人 Wi-Fi 密码。
+登录后，点顶部网络图标选择 Wi-Fi。通用镜像不含个人 Wi-Fi 密码。
+
+| 快捷键 | 操作 |
+| --- | --- |
+| `Win+D` / `Win+Shift+D` | 应用菜单 / 命令运行器 |
+| `Win+Enter` / `Win+Shift+F` | Xfce Terminal / 文件管理器 |
+| `Win+N` | Wi-Fi 连接列表 |
+| `Win+Q` / `Win+F` | 关闭当前窗口 / 切换全屏 |
+| `Win+方向键` / `Win+Shift+方向键` | 切换窗口焦点 / 移动当前窗口 |
+| `Win+1` 至 `Win+8` | 切换工作区，加 `Shift` 将当前窗口移到对应工作区 |
+| `Win+Shift+X` / `Win+Shift+E` | 锁屏 / 打开电源菜单 |
+| `Ctrl+空格` / `Print` | 切换中文输入 / 截图到 `~/Pictures` |
+
+关机可按 `Win+Shift+E`，选「关机」后确认。登录界面也可用右上角电源按钮。合盖休眠会锁屏，开盖后直接输入 Debian 登录密码并按 `Enter`。`Verifying` 表示 i3lock 正在验证密码。
+
+已部署到 eMMC p21 的双系统可用应用菜单里的「切换系统」往返 Debian 与 Android。[图形切换与授权步骤](../tools/system-switcher/README.md)
 
 时区为 `Asia/Shanghai`。联网后 `systemd-timesyncd` 依次尝试阿里云、Cloudflare 与 Debian 池的 NTP 源。运行 `timedatectl timesync-status` 可查看应答服务器和收到的数据包数；NTP 全部不可达时时钟保持不动，不再有额外的 HTTPS 校时服务。
 

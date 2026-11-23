@@ -1,0 +1,31 @@
+#!/bin/sh
+# Adjust the RK809 master volume and show an Archcraft-style OSD.
+set -eu
+DEVICE=hw:CARD=rockchiprk809co
+runtime="${XDG_RUNTIME_DIR:-$HOME/.cache}/cloudbook-i3"
+mkdir -p "$runtime"
+exec 9>"$runtime/volume.lock"
+flock 9
+
+mixer() { amixer -D "$DEVICE" "$@"; }
+
+case "${1:-}" in
+    up)    mixer -q sset Master playback 5%+ ;;
+    down)  mixer -q sset Master playback 5%- ;;
+    set50) mixer -q sset Master playback 50% ;;
+    mute)
+        # The RK809 Master control has playback gain but no playback switch.
+        saved="$runtime/volume-before-mute"
+        level=$(mixer sget Master | awk '/Front (Left|Right): Playback/ {printf "%s%s", sep, $4; sep=","}')
+        if [ "$level" = 0,0 ] && [ -s "$saved" ]; then
+            mixer -q sset Master playback "$(cat "$saved")"
+            rm -f "$saved"
+        elif [ "$level" != 0,0 ]; then
+            printf '%s\n' "$level" > "$saved"
+            mixer -q sset Master playback 0%
+        fi
+        ;;
+    *) echo "usage: $0 up|down|set50|mute" >&2; exit 1 ;;
+esac
+vol=$(mixer sget Master | awk -F'[][]' '/Front Left: Playback/{print $2; exit}')
+dunstify -a volume -u low -t 1200 -i audio-volume-medium-symbolic -h "int:value:${vol%\%}" -h string:x-dunst-stack-tag:volume "音量  ${vol:-?}"
