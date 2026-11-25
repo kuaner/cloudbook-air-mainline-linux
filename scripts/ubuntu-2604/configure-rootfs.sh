@@ -29,7 +29,6 @@ for config in \
     etc/systemd/logind.conf.d/90-cloudbook-power.conf \
     etc/systemd/sleep.conf.d/90-cloudbook-sleep.conf \
     etc/systemd/system/cloudbook-mark-boot-successful.service \
-    etc/tmpfiles.d/cloudbook-cpu.conf \
     etc/udev/rules.d/90-backlight.rules \
     usr/share/polkit-1/actions/io.github.kuaner.cloudbook.switch-system.policy; do
     install -D -m 0644 "$overlay/$config" "$root/$config"
