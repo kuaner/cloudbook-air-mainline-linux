@@ -24,7 +24,6 @@
 | `build_kernel_612.sh`, `build_boot_linux_612.sh`, `pack_boot_linux.py`, `switch_ab_slot.py`, `emmc_backup_and_migrate.sh`, `scripts/restore_factory_android.sh`, `tools/serial_bridge.py`, `docs/*` | `MIT` / `GPL-2.0` | 本项目脚本与文档 | 构建、打包、槽位切换与移植文档 |
 | `rootfs_overlay/usr/local/share/cloudbook/archcraft-desktop-assets.tar.zst` | 见归档中的许可文件 | Archcraft 项目及各主题、图标、字体作者 | 归档内的 `ARCHCRAFT-ASSETS.md` 记录来源和版本 |
 | `tools/system-switcher/android/res/drawable/` | `MIT` | Feather Icons，Cole Bemis 和贡献者 | 操作图标基于 [Feather 4.29.2](https://github.com/feathericons/feather/tree/v4.29.2)，APK 随附 [Feather 许可](tools/system-switcher/FEATHER-LICENSE)。 |
-| `rootfs_overlay/usr/share/themes/CloudBook-Greeter/gtk-3.0/clock.png`、`power.png` | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Font Awesome，Dave Gandy 和贡献者 | 取自 Symbols Nerd Font 中与桌面 Polybar 相同的字形，并按桌面配色渲染为 PNG。[Font Awesome 许可](https://fontawesome.com/license/free) |
 | Android 切换器依赖 `adblib:1.3` | BSD 三条款 | Cameron Gutman、Anton Tananaev | 构建 APK 时附带 [依赖许可](tools/system-switcher/ADBLIB-LICENSE.txt) |
 
 ---

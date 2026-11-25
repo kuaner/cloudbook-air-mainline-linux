@@ -52,8 +52,7 @@ chroot "$root" apt-get "${apt_options[@]}" update
 chroot "$root" apt-get "${apt_options[@]}" install -y --no-install-recommends \
     ubuntu-minimal systemd-sysv systemd-timesyncd dbus dbus-user-session sudo locales tzdata \
     initramfs-tools busybox zstd kmod e2fsprogs plymouth plymouth-label \
-    lightdm lightdm-gtk-greeter xserver-xorg-core xserver-xorg-input-libinput xwayland \
-    niri libwayland-server0 xwayland-satellite foot thunar gvfs gvfs-backends vim htop zsh \
+    niri libwayland-server0 foot thunar gvfs gvfs-backends vim htop zsh \
     firefox firefox-l10n-zh-cn xdg-utils xdg-user-dirs \
     network-manager wpasupplicant wireless-regdb bluez openssh-server rfkill ethtool \
     pipewire pipewire-pulse pipewire-alsa wireplumber pulseaudio-utils alsa-utils alsa-ucm-conf upower \
@@ -64,7 +63,6 @@ chroot "$root" apt-get "${apt_options[@]}" install -y --no-install-recommends \
     libinput-tools mesa-utils libgl1-mesa-dri mesa-vulkan-drivers \
     gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
     gstreamer1.0-libav parole v4l-utils
-bash /work/scripts/ubuntu-2604/configure-rootfs.sh "$root"
 
 if [[ -d /noctalia-packages ]]; then
     noctalia_packages=/noctalia-packages
@@ -86,8 +84,10 @@ for package in noctalia noctalia-data fonts-noctalia-tabler; do
     noctalia_debs+=("/tmp/cloudbook-noctalia/$filename")
 done
 
-chroot "$root" apt-get "${apt_options[@]}" install -y --no-install-recommends "${noctalia_debs[@]}"
+chroot "$root" apt-get "${apt_options[@]}" install -y --no-install-recommends \
+    greetd noctalia-greeter "${noctalia_debs[@]}"
 rm -r "$root/tmp/cloudbook-noctalia"
+bash /work/scripts/ubuntu-2604/configure-rootfs.sh "$root"
 
 modstage=$(mktemp -d)
 tar -xzf "/kernel/modules-$kver.tar.gz" -C "$modstage"
@@ -102,7 +102,13 @@ chroot "$root" depmod "$kver"
 chroot "$root" runuser -u kuaner -- niri validate --config /etc/niri/config.kdl
 chroot "$root" runuser -l kuaner -c \
     'zsh -ic "[[ \$ZSH_THEME == ys && \$+functions[omz] == 1 && \$PROMPT == *ys_hg_prompt_info* ]]"'
-chroot "$root" lightdm --show-config
+chroot "$root" systemctl is-enabled greetd.service
+test "$(readlink "$root/etc/systemd/system/display-manager.service")" = /usr/lib/systemd/system/greetd.service
+test "$(chroot "$root" runuser -u _greetd -- noctalia-greeter sessions)" = Niri
+chroot "$root" runuser -u _greetd -- test -r /var/lib/noctalia-greeter/greeter.toml
+chroot "$root" runuser -u _greetd -- test -r /usr/share/backgrounds/cloudbook/tokyo.png
+test ! -e "$root/usr/bin/Xwayland"
+test ! -e "$root/usr/lib/xorg/Xorg"
 chroot "$root" noctalia --version
 chroot "$root" vim --version | sed -n '1p'
 chroot "$root" gst-inspect-1.0 --version

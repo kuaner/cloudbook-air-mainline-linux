@@ -44,7 +44,7 @@ BUILD_MODULES=1 ./build_kernel_735.sh
 
 脚本应用移植与后续板级补丁，同步分层 v30 设备树，生成 `Image`、DTB 和模块到 `kernel_build/out-7.3.5/`。首次构建用仓库中的 `config-7.3.5-cloudbook` 初始化，后续复用输出目录里的 `.config`。
 
-Niri 通过 Smithay 提交 KMS 帧。已验证的内核保留 `DIRTYFB` 补丁供 LightDM 登录阶段的 Xorg 使用。用 `CLOUDBOOK_X11_DIRTYFB_WORKAROUND=0 ./build_kernel_735.sh` 可构建使用 Rockchip 原有回调的对照内核。
+Niri 通过 Smithay 提交 KMS 帧。当前内核仍包含早期 Xorg 桌面的 `DIRTYFB` 补丁，Wayland 登录和 Niri 会话均无需 Xorg。用 `CLOUDBOOK_X11_DIRTYFB_WORKAROUND=0 ./build_kernel_735.sh` 可构建使用 Rockchip 原有回调的对照内核。
 
 关键配置（已在 `config-7.3.5-cloudbook` 中）：
 
@@ -82,7 +82,7 @@ Ubuntu 的 initramfs 和 A 槽引导由第 7 节的桌面镜像构建生成。v2
 
 > **Wi-Fi/BT 只使用 W103D 补丁集，不使用主线原生 mt7663s。** 原生驱动在本机同固件上存在已复现的问题（重启后固件挂死、P2P/ROC/sched_scan 触发异常、2.4G↔5G 切频认证超时、Wi-Fi/BT eFuse 初始化竞争），W103D 补丁即为此而存在，不作为可选替代。
 
-1. Ubuntu 已从 USB 根盘启动，eDP 内屏在 Niri 下使用 Panfrost 和 OpenGL ES 3.1。早期双系统测试确认 Linux 能挂载 eMMC `p21`。外接 HDMI 音频仍待实测。
+1. Ubuntu 已从 USB 根盘和 eMMC `p21` 启动。eDP 内屏在 Niri 下使用 Panfrost 和 OpenGL ES 3.1，Noctalia Greeter 也已验证使用 Panfrost 加速，并通过 greetd 登录 Niri。外接 HDMI 音频仍待实测。
 2. 从本机 Android B 提取配套 MT7663 固件后，5 GHz 通过 12 轮双向传输校验，2.4 GHz 自动回退也通过了传输测试。此前的 ACK 不足发生在使用旧固件时。蓝牙控制器已上电。
 3. 电池已确认充电和放电，状态栏使用板载 SBS 的实时电量与状态。合盖休眠仍需单独测试。
 4. GStreamer 指定 `v4l2slh265dec` 已输出 720p HEVC 样本的全部 48 帧。1080p30 的 H.264 和 HEVC 样本各 60 帧，经指定硬解组件解码后，整段 I420 输出均与 FFmpeg 软件解码的 SHA-256 一致。完整的 `fluster -p hevc` 一致性测试仍待运行。
@@ -118,7 +118,11 @@ BUILD_MODULES=1 ./build_kernel_735.sh
 | `emmc/rootfs-ubuntu-26.04-niri-noctalia-emmc.ext4` | 写入现有 eMMC p21，卷标 `EMMC_ROOTFS` |
 | `emmc/boot_linux_73_v30_ubuntu_2604_emmc.img` | eMMC 日用 A 槽引导，检测到 USB 存储才额外等待盘符 |
 
-两份根镜像各有 `.ext4.zst` 压缩版，两个目录各有一份 `SHA256SUMS`。系统自带 LightDM 登录、Wayland 下的 Niri / Noctalia、Foot、Vim、Fcitx5 拼音和 zsh / Oh My Zsh，默认主题为 `ys`。Ubuntu ARM64 的基础、更新、安全和 backports 仓默认使用清华 `ubuntu-ports` 镜像。Firefox 使用 Mozilla 的 ARM64 APT 仓库。Noctalia 5.6.0 在构建时应用 ARM CPU 名称回退补丁。Ubuntu 的发行版 GStreamer 1.28 已含 HEVC 可见区域的 `GstVideoMeta` 修复，支持该元数据的下游可直接消费 DMA-BUF。[上游 HEVC 修复](https://github.com/GStreamer/gstreamer/commit/e7be87b3de56e8c9922359c410b5c17864cbbf29) · [镜像部署](../docs/FLASHING_GUIDE.md)
+两份根镜像各有 `.ext4.zst` 压缩版，两个目录各有一份 `SHA256SUMS`。greetd 在 VT1 启动 Noctalia Greeter，登录页和 Niri 桌面共用 Catppuccin 深色配色与东京夜景壁纸。系统自带 Foot、Vim、Fcitx5 拼音和 zsh / Oh My Zsh，默认主题为 `ys`。[Noctalia Greeter 文档](https://docs.noctalia.dev/greeter/) · [镜像部署](../docs/FLASHING_GUIDE.md)
+
+根镜像默认不安装 Xorg 或 Xwayland。`xwayland-satellite` 作为 Niri 的包依赖保留，默认禁用。需要运行 X11 应用时，执行 `sudo apt install xwayland`，删除 `/etc/niri/config.kdl` 中的 `xwayland-satellite { off }` 配置块，再注销重登。
+
+Ubuntu ARM64 的基础、更新、安全和 backports 仓默认使用清华 `ubuntu-ports` 镜像。Firefox 使用 Mozilla 的 ARM64 APT 仓库。Noctalia 5.6.0 在构建时应用 ARM CPU 名称回退补丁。Ubuntu 的发行版 GStreamer 1.28 已含 HEVC 可见区域的 `GstVideoMeta` 修复，支持该元数据的下游可直接消费 DMA-BUF。[上游 HEVC 修复](https://github.com/GStreamer/gstreamer/commit/e7be87b3de56e8c9922359c410b5c17864cbbf29)
 
 WirePlumber 优先选择 RK809 的扬声器和耳机输出，HDMI 仍可在 Noctalia 中选用。Wayland 屏幕共享使用 GNOME portal 的 ScreenCast 后端，文件选择继续用 GTK portal，目录默认由 Thunar 打开。
 

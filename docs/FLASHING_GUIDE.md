@@ -101,9 +101,9 @@ head -c "$(wc -c < "$boot_img" | tr -d '[:space:]')" "$snapshot/boot_a.readback.
 
 默认用 `kuaner` 登录，初始密码为 `kuaner`。按 `Win+Enter` 打开 Foot，运行 `cat /etc/os-release` 确认 Ubuntu 26.04，运行 `uname -r` 确认 `7.3.5-cloudbook`，用 `findmnt -n -o SOURCE /` 和 `lsblk -o NAME,LABEL,MOUNTPOINTS` 确认根盘来自标记为 `ROOTFS` 的 U 盘。`Win+D` 打开应用菜单，`Win+S` 打开 Noctalia 控制中心。三指左右滑动浏览横向窗口列。验收时检查 Wi-Fi、视频播放、合盖和重启。
 
-通过 U 盘验收后，从 U 盘启动并将 `emmc/rootfs-ubuntu-26.04-niri-noctalia-emmc.ext4` 写到未挂载的 `/dev/mmcblk0p21`，将 `emmc/boot_linux_73_v30_ubuntu_2604_emmc.img` 写到 `boot_a`。先用 `lsblk` 和 GPT 分区名核对 p21 与 `boot_a`，并确认目标容量。写入后对未挂载的 p21 运行 `e2fsck -f` 和 `resize2fs`，使文件系统使用整个分区。写入 ext4 镜像会覆盖 p21 上的旧系统。首次划分 p20/p21 会清除原 `userdata`。[实机布局与分区条件](P20_P21_DUAL_BOOT_PLAN.md)
+通过 U 盘验收后，从 U 盘启动并将 `emmc/rootfs-ubuntu-26.04-niri-noctalia-emmc.ext4` 写到未挂载的 `/dev/mmcblk0p21`，将 `emmc/boot_linux_73_v30_ubuntu_2604_emmc.img` 写到 `boot_a`。先用 `lsblk` 和 GPT 分区名核对 p21 与 `boot_a`，并确认目标容量。写入 ext4 镜像会覆盖 p21 上的旧系统。首次划分 p20/p21 会清除原 `userdata`。[实机布局与分区条件](P20_P21_DUAL_BOOT_PLAN.md)
 
-部署完成后，关机并拔掉 U 盘，再开机确认 `/` 挂载自 `/dev/mmcblk0p21`。Noctalia 电源菜单中选择「重启到安卓」可启动 B 槽。[双系统切换](../tools/system-switcher/README.md)
+部署完成后，关机并拔掉 U 盘，再开机确认 `/` 挂载自 `/dev/mmcblk0p21`。运行 `sudo resize2fs /dev/mmcblk0p21` 可在线扩容至整个分区，用 `df -h /` 确认容量。Noctalia 电源菜单中选择「重启到安卓」可启动 B 槽。[双系统切换](../tools/system-switcher/README.md)
 
 eMMC 引导先检查已就绪的 `ROOTFS` U 盘。只有内核已枚举到 USB 存储接口时，才额外等至多四秒扫描盘符。未检测到存储时直接走 eMMC。较慢的 U 盘可尝试另一 USB 口。首次试跑引导始终提供这段扫描窗口。[镜像构建](../mainline-7.3/README.md#7-ubuntu-桌面与-rootfs-构建)
 

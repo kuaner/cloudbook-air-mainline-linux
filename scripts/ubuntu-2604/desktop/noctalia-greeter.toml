@@ -1,0 +1,12 @@
+[session]
+default = "Niri"
+
+[user]
+default = "kuaner"
+
+[appearance]
+scheme = "Catppuccin"
+
+[appearance.wallpaper]
+path = "/usr/share/backgrounds/cloudbook/tokyo.png"
+fill_mode = "crop"

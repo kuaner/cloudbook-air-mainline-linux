@@ -2,7 +2,7 @@
 
 > **目标机型**：中国移动 / 中兴云电脑笔记本 `CT2000-24RTW`（主板丝印 `W620D V12.0`）  
 > **硬件平台**：Rockchip `RK3568B2` · 4GB LPDDR4 · 32GB eMMC（无 TF 卡槽）· BOE `NV140WUM-N44` 1920×1200@60Hz eDP · MT7663S SDIO Wi-Fi/BT  
-> 日用桌面使用 Ubuntu 26.04 LTS ARM64、Niri 和 Noctalia，搭配 `7.3.5-cloudbook` 板级内核。Debian 构建停止维护，原有部署和测试记录供回查。主线 Linux `6.12.117 LTS` 保留为移植基线。
+> 日用桌面使用 Ubuntu 26.04 LTS ARM64、Niri 和 Noctalia，通过 greetd 与 Noctalia Greeter 提供 Wayland 图形登录，搭配 `7.3.5-cloudbook` 板级内核。Debian 构建停止维护，原有部署和测试记录供回查。主线 Linux `6.12.117 LTS` 保留为移植基线。
 
 ---
 

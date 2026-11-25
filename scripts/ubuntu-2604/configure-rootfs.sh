@@ -25,7 +25,6 @@ printf 'kuaner:%s\n' "${CLOUDBOOK_LOGIN_PASSWORD:-kuaner}" | chroot "$root" chpa
 
 for config in \
     etc/default/zramswap \
-    etc/lightdm/lightdm-gtk-greeter.conf.d/60-cloudbook-panel.conf \
     etc/systemd/logind.conf.d/90-cloudbook-power.conf \
     etc/systemd/sleep.conf.d/90-cloudbook-sleep.conf \
     etc/systemd/system/cloudbook-mark-boot-successful.service \
@@ -39,7 +38,7 @@ for executable in \
     usr/local/bin/cloudbook-switch-system; do
     install -D -m 0755 "$overlay/$executable" "$root/$executable"
 done
-for directory in usr/share/alsa/ucm2 usr/share/plymouth/themes/cloudbook-air usr/share/themes/CloudBook-Greeter; do
+for directory in usr/share/alsa/ucm2 usr/share/plymouth/themes/cloudbook-air; do
     install -d "$root/$directory"
     tar -C "$overlay/$directory" --owner=0 --group=0 -cf - . |
         tar -C "$root/$directory" --numeric-owner -xf -
@@ -87,15 +86,14 @@ install -D -m 0644 "$desktop/90-cloudbook.gschema.override" \
 chroot "$root" glib-compile-schemas --strict /usr/share/glib-2.0/schemas
 install -D -m 0644 "$desktop/70-cloudbook-noctalia-stop.conf" \
     "$root/etc/systemd/user/app-niri-noctalia-.scope.d/70-cloudbook-noctalia-stop.conf"
-for config in 70-cloudbook-niri.conf 75-cloudbook-plymouth.conf; do
-    install -D -m 0644 "$desktop/$config" "$root/etc/lightdm/lightdm.conf.d/$config"
-done
-cat > "$root/etc/lightdm/lightdm.conf.d/50-cloudbook.conf" <<'EOF'
-[Seat:*]
-greeter-session=lightdm-gtk-greeter
-greeter-show-manual-login=true
-greeter-hide-users=false
-EOF
+install -D -m 0644 "$desktop/greetd.toml" "$root/etc/greetd/cloudbook.toml"
+install -D -m 0644 "$desktop/greetd.service.conf" \
+    "$root/etc/systemd/system/greetd.service.d/noctalia-greeter.conf"
+install -D -m 0644 "$desktop/plymouth-quit.service.conf" \
+    "$root/etc/systemd/system/plymouth-quit.service.d/90-cloudbook.conf"
+chroot "$root" install -d -m 0750 -o _greetd -g _greetd /var/lib/noctalia-greeter
+install -m 0640 "$desktop/noctalia-greeter.toml" "$root/var/lib/noctalia-greeter/greeter.toml"
+chroot "$root" chown root:_greetd /var/lib/noctalia-greeter/greeter.toml
 for tty in tty1 tty2; do
     ln -sfn /dev/null "$root/etc/systemd/system/getty@$tty.service"
     ln -sfn /dev/null "$root/etc/systemd/system/autovt@$tty.service"
@@ -141,9 +139,9 @@ ExecStart=/usr/bin/ssh-keygen -A
 [Install]
 RequiredBy=ssh.service
 EOF
-chroot "$root" systemctl disable ssh.socket
+chroot "$root" systemctl disable ssh.socket NetworkManager-wait-online.service \
+    ubuntu-advantage.service ua-reboot-cmds.service ua-timer.timer motd-news.timer
 chroot "$root" systemctl enable NetworkManager.service bluetooth.service ssh.service \
     cloudbook-ssh-host-keys.service cloudbook-mark-boot-successful.service \
-    systemd-timesyncd.service zramswap.service
-ln -sfn /usr/lib/systemd/system/lightdm.service "$root/etc/systemd/system/display-manager.service"
+    systemd-timesyncd.service zramswap.service greetd.service
 chroot "$root" systemctl set-default graphical.target

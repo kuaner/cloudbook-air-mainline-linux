@@ -36,6 +36,12 @@ URIs: https://pkg.noctalia.dev/deb/
 Suites: resolute/
 Architectures: arm64
 Signed-By: /etc/apt/keyrings/noctalia.gpg
+
+Types: deb
+URIs: https://pkg.noctalia.dev/deb/
+Suites: resolute-backports/
+Architectures: arm64
+Signed-By: /etc/apt/keyrings/noctalia.gpg
 EOF
 cat > "$apt_dir/sources.list.d/cloudbook-mozilla.sources" <<'EOF'
 Types: deb
@@ -53,6 +59,10 @@ Pin-Priority: 500
 Package: noctalia noctalia-data fonts-noctalia-tabler
 Pin: origin pkg.noctalia.dev
 Pin-Priority: 500
+
+Package: noctalia-greeter libwlroots-0.20
+Pin: origin pkg.noctalia.dev
+Pin-Priority: 100
 
 Package: firefox firefox-l10n-zh-cn
 Pin: origin packages.mozilla.org

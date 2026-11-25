@@ -42,6 +42,11 @@ cursor {
     xcursor-size 24
 }
 
+// Restore X11 support by installing xwayland and removing this block.
+xwayland-satellite {
+    off
+}
+
 screenshot-path "~/Pictures/Screenshot from %Y-%m-%d %H-%M-%S.png"
 
 binds {
