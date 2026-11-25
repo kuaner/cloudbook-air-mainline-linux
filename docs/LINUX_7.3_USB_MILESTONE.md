@@ -93,4 +93,4 @@ ARM64 QEMU（`-M virt` + virtio-blk + 8 GiB USB 镜像）已用该组合启动�
 
 ## Android 14 可以复用的部分
 
-本阶段验证了原厂引导器加载自制 `boot_a`、内核早期识别 U 盘以及内屏等板级接线。Android 14 已另有 Rockchip 6.1 BSP 候选内核和启动镜像。若采用外置系统盘试验，下一阶段需让 Android first-stage init 从 USB 找到和挂载 Android 逻辑分区，为试验提供独立的 `/data`，并核对 AVB、vendor HAL 与内核驱动的匹配关系。Android 14 的 USB 启动和桌面均待实机验证。[Android 14 移植现状](ANDROID14_PORT_STATUS.md)
+本阶段验证了原厂引导器加载自制 `boot_a`、内核早期识别 U 盘以及内屏等板级接线。后续已用 Rockchip 6.1 BSP 打包 Android 14 USB v4 候选镜像，在 U 盘上提供 Android 系统分区与独立的 `/data`。Android 14 的 USB 启动和桌面均待实机验证。[Android 14 移植现状](ANDROID14_PORT_STATUS.md)

@@ -1,9 +1,15 @@
 # Android 14 移植状态与刷机 Runbook
 
-> **日期**：2026-11-20  
-> **目标机**：ZTE / 中国移动 CloudBook Air 14" `CT2000-24RTW`（主板 `W620D V12.0`，RK3568B2，4 GB / 32 GB）  
-> **目标布局**：A 槽 = Android 14，B 槽 = 原厂 Android 11；**B 槽不改**。  
-> **实验状态**：内核和 `boot.img` 已完成。`super` 的 A 逻辑分区、vendor overlay、真机验证还未完成。此方案与 Debian 共用 A 槽，日用双系统见 [7.3.5 刷机手册](FLASHING_GUIDE.md)。
+目标机为 ZTE / 中国移动 CloudBook Air 14" `CT2000-24RTW`（主板 `W620D V12.0`，RK3568B2，4 GB / 32 GB）。Ubuntu 和原厂 Android 双系统的安装和恢复见 [7.3.5 刷机手册](FLASHING_GUIDE.md)。
+
+## USB v4 试验状态（2026-11-24）
+
+- 本地 `artifacts/android14/` 已有 `boot_android14_usb_v4.img` 和 `android14-usb-v4.img`。启动镜像使用 Rockchip 6.1.172 BSP 与 CloudBook DTS，U 盘提供 Android 的 `system`、`vendor`、`metadata` 和独立的 `/data`。试验启动需临时占用 Linux 使用的 `boot_a` 并切换到 A 槽。对应工具见 [USB 镜像构建](../scripts/build_android14_usb_image.py)和 [A 槽试验启动](../scripts/flash_android14_usb_boot.py)。
+- 镜像中的 FriendlyElec Android 14 用户空间包含 Rockchip Composer3 和 `c2.rk.avc.decoder`、`c2.rk.hevc.decoder`。框架安全补丁日期为 2025-06-05。
+- USB v4 尚无确认完成启动的实机记录。远程视频验证需确认内屏点亮、H.264 硬解和硬件合成，再用同一套全范围灰阶和运动片源核对 NV12 平面的色彩范围、实际上屏帧率和延迟。原厂 Android 11 的对照见 [远程 Mac 客户端](../tools/cloudbook-remote/README.md)。
+- Rockchip `develop-6.1` 的 VOP2 驱动会读取平面的色彩矩阵与范围。RK3568 的 `Cluster0-win0` 使用 10 位 CSC 系数路径，驱动收到 BT.709 全范围时会回退到 BT.601 全范围。即使 Composer3 能正确传递范围标记，仍需用灰阶和色块共同验证直出效果。[VOP2 色彩转换](https://github.com/rockchip-linux/kernel/blob/develop-6.1/drivers/gpu/drm/rockchip/rockchip_drm_vop2.c#L3836-L3860) · [RK3568 平面定义](https://github.com/rockchip-linux/kernel/blob/develop-6.1/drivers/gpu/drm/rockchip/rockchip_vop2_reg.c#L4903-L4928)
+
+以下为 2026-11-20 记录的 eMMC A 槽移植方案。该方案把 Android 14 的系统分区放在 `super`，原厂 Android 11 使用 B 槽。
 
 ---
 
@@ -222,4 +228,4 @@ adb reboot
 
 ## 8. Linux 侧
 
-Android 14 实验使用独立的 Rockchip 6.1 BSP。当前 Debian 内核、桌面和配套 v30 通用镜像的构建见 [7.3.5 构建说明](../mainline-7.3/README.md)，6.12 构建见 [LTS 移植基线](../mainline-6.12/README.md)。
+Android 14 实验使用独立的 Rockchip 6.1 BSP。当前主线内核、Ubuntu 桌面和配套 v30 通用引导镜像见 [7.3.5 构建说明](../mainline-7.3/README.md)，6.12 构建见 [LTS 移植基线](../mainline-6.12/README.md)。

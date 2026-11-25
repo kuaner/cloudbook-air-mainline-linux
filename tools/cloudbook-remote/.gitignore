@@ -1,0 +1,7 @@
+.gradle/
+.cxx/
+__pycache__/
+**/build/
+local.properties
+
+/native/target/
