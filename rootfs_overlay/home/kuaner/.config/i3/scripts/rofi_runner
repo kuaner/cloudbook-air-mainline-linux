@@ -1,2 +1,0 @@
-#!/bin/sh
-exec rofi -show run -theme "$HOME/.config/i3/theme/rofi/runner.rasi"

@@ -2,14 +2,13 @@
 
 > **目标机型**：中国移动 / 中兴云电脑笔记本 `CT2000-24RTW`（主板丝印 `W620D V12.0`）  
 > **硬件平台**：Rockchip `RK3568B2` · 4GB LPDDR4 · 32GB eMMC（无 TF 卡槽）· BOE `NV140WUM-N44` 1920×1200@60Hz eDP · MT7663S SDIO Wi-Fi/BT  
-> **当前状态**：保留主线 Linux `6.12.117 LTS` 作为移植基线。`7.3.5-cloudbook` 提供新版 Debian 13 i3 桌面。已在真机上用图形工具往返切换 eMMC 上的 Debian 与原厂 Android 11。
+> 日用桌面使用 Ubuntu 26.04 LTS ARM64、Niri 和 Noctalia，搭配 `7.3.5-cloudbook` 板级内核。Debian 构建停止维护，原有部署和测试记录供回查。主线 Linux `6.12.117 LTS` 保留为移植基线。
 
 ---
 
-- 备份设备、制作试跑 U 盘、写入 A 槽和部署到 p21。[7.3.5 刷机与部署](docs/FLASHING_GUIDE.md)
-- 查看构建所需输入、生成文件和真机验证范围。[7.3.5 内核与 Debian 桌面构建](mainline-7.3/README.md)
-- 使用 i3 桌面。[快捷键、关机、锁屏与 Wi-Fi](docs/USB_TEST_KIT_7.3.md#4-首次启动预期) · [图形应用安装](docs/USB_TEST_KIT_7.3.md#安装图形应用)
-- 在电源菜单切换系统、构建 APK 和配置 ADB 授权。[Debian 与 Android 图形切换](tools/system-switcher/README.md)
+- 制作试跑 U 盘、写入 A 槽和部署到 p21。[7.3.5 刷机与部署](docs/FLASHING_GUIDE.md)
+- 构建板级内核和 Ubuntu Niri / Noctalia 镜像。[7.3.5 内核与 Ubuntu 桌面构建](mainline-7.3/README.md)
+- 在电源菜单切换系统、构建 APK 和配置 ADB 授权。[Linux 与 Android 图形切换](tools/system-switcher/README.md)
 - 维护与排查。[6.12 LTS 移植基线](mainline-6.12/README.md) · [OTG 恢复](docs/OTG_RECOVERY.md) · [移植进度](docs/progress.md)
 
 ## 一、 启动与分区
@@ -18,7 +17,7 @@
 
 - **A 槽** `boot_a`（`/dev/mmcblk0p11`）存放 Linux 内核、initramfs 和设备树。
 - **B 槽** `boot_b`（`/dev/mmcblk0p12`）与 `super` 中的 B 槽逻辑分区提供原厂 Android 11。
-- **双系统数据**。p20 `userdata` 供 Android 使用，p21 `rootfs`（`LABEL=EMMC_ROOTFS`）存放 Debian。v30 通用引导镜像优先使用卷标为 `ROOTFS` 的试跑 U 盘。[实机布局](docs/P20_P21_DUAL_BOOT_PLAN.md)
+- **双系统数据**。p20 `userdata` 供 Android 使用，p21 `rootfs`（`LABEL=EMMC_ROOTFS`）存放内置 Linux。v30 通用引导镜像优先使用卷标为 `ROOTFS` 的试跑 U 盘。[实机布局](docs/P20_P21_DUAL_BOOT_PLAN.md)
 - **刷机边界**。保留原厂签名链的 eMMC 前 8 MiB、`security`、`uboot_a/b`、`trust_a/b`。Type-C 旁的 USB-A 是 Rockusb/UMS 刷机口。写入 `boot_a` 或 `misc` 前先备份并验证 B 槽能启动。[刷机手册](docs/FLASHING_GUIDE.md)
 
 ---
@@ -70,8 +69,8 @@
 │   ├── REVERSE_ENGINEERING_NOTES.md       # Android 4.19 & U-Boot 逆向核心结论汇总
 │   ├── OTG_RECOVERY.md                    # OTG Rockusb / UMS / UART 热键恢复手册
 │   └── cloudbook-air-mainline/            # P0~P4 阶段详细排障与工程记录
-├── rootfs_overlay/                        # 板级配置模板（背光 udev、触控板、LightDM、合盖休眠、RK809 ALSA UCM2 路由）
-├── scripts/build-rootfs-735.sh             # 重建 7.3.5 桌面 USB/eMMC 根镜像与通用引导镜像
+├── rootfs_overlay/                        # 板级配置、开机动画、登录主题和 RK809 音频路由
+├── scripts/build-ubuntu-2604-735.sh        # 生成 Ubuntu 26.04 USB/eMMC 根镜像及配套引导
 ├── scripts/build-system-switcher-apk.sh   # 本地构建 Android 切换工具 APK
 ├── tools/system-switcher/                 # 双系统切换说明及 Android 源码
 ├── build_kernel_612.sh                    # 一键应用补丁并编译 Image / DTB（LLVM/Clang）
@@ -87,10 +86,10 @@
 
 ## 四、 本地构建
 
-日用桌面按 [7.3.5 内核构建](mainline-7.3/README.md#2-复现)和[桌面镜像构建](mainline-7.3/README.md#7-debian-桌面与-rootfs-构建)执行。构建得到配套的 USB 根镜像、eMMC 根文件系统归档和 `boot_linux_73_v30_auto.img`。内核源码、基础 Debian 根文件系统、从自有设备导出的原厂 RSCE 资源模板及无线固件均为本地输入。[版权与固件来源](LICENSES_AND_COPYRIGHT.md)
+日用桌面按 7.3.5 内核与 Ubuntu 桌面构建说明操作。构建生成 USB 和 eMMC 两套 ext4 根镜像及配套 A 槽引导。Ubuntu 基础系统从 APT 仓库构建，板级内核、从自有设备导出的原厂 RSCE 资源模板及无线固件为本地输入。[内核构建](mainline-7.3/README.md#2-复现) · [Ubuntu 桌面构建](mainline-7.3/README.md#7-ubuntu-桌面与-rootfs-构建) · [版权与固件来源](LICENSES_AND_COPYRIGHT.md)
 
-维护 6.12 时使用 [6.12 构建入口](mainline-6.12/README.md#构建)。需要同时编译两代内核和打包固定根盘引导镜像时，可运行 `./rebuild_linux.sh`，具体文件名见 [7.3.5 产物](mainline-7.3/README.md#3-产物)和 [6.12 产物](mainline-6.12/README.md#构建)。
+维护 6.12 时使用 [6.12 构建入口](mainline-6.12/README.md#构建)。`./rebuild_linux.sh` 可一次编译两代内核、导出 7.3 内核文件并打包 6.12 引导镜像。[7.3.5 产物](mainline-7.3/README.md#3-产物) · [6.12 产物](mainline-6.12/README.md#构建)
 
 ## 五、 恢复 Android
 
-双系统可正常启动时，从 Debian 电源菜单选「安卓」即可切回 B 槽。无法进入桌面时，按 [OTG 恢复手册](docs/OTG_RECOVERY.md) 使用已验证的 Android ADB、U-Boot Rockusb 或 UMS。整盘恢复前先核对当前 GPT 与备份布局，特别是 p20 的起止位置和大小。[双系统分区回滚](docs/P20_P21_DUAL_BOOT_PLAN.md#8-回滚)
+双系统可正常启动时，从 Noctalia 电源菜单选「重启到安卓」即可切回 B 槽。无法进入桌面时，可使用已验证的 Android ADB、U-Boot Rockusb 或 UMS。整盘恢复前先核对当前 GPT 与备份布局，特别是 p20 的起止位置和大小。[OTG 恢复手册](docs/OTG_RECOVERY.md) · [双系统分区回滚](docs/P20_P21_DUAL_BOOT_PLAN.md#8-回滚)

@@ -1,0 +1,32 @@
+spawn-at-startup "noctalia"
+
+environment {
+    TERMINAL "/usr/local/bin/cloudbook-niri-terminal"
+}
+
+layout {
+    focus-ring {
+        active-color "#cba6f7"
+    }
+}
+
+window-rule {
+    geometry-corner-radius 12
+    clip-to-geometry true
+}
+
+window-rule {
+    match app-id="^dev[.]noctalia[.]Noctalia$"
+    open-floating true
+}
+
+debug {
+    honor-xdg-activation-with-invalid-serial
+}
+
+binds {
+    Mod+D { spawn "noctalia" "msg" "panel-toggle" "launcher"; }
+    Mod+S { spawn "noctalia" "msg" "panel-toggle" "control-center"; }
+    Mod+Shift+X { spawn "noctalia" "msg" "session" "lock"; }
+    Mod+Shift+E { spawn "noctalia" "msg" "panel-toggle" "session"; }
+}

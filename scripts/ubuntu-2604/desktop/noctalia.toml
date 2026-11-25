@@ -1,0 +1,61 @@
+[theme]
+mode = "dark"
+source = "builtin"
+builtin = "Catppuccin"
+
+[wallpaper.default]
+path = "/usr/share/backgrounds/cloudbook/tokyo.png"
+
+[bar.main]
+layer = "top"
+position = "top"
+thickness = 34
+margin_edge = 8
+margin_ends = 12
+capsule = true
+compositor_blur = false
+start = ["launcher", "workspaces"]
+center = ["clock"]
+end = ["tray", "notifications", "network", "volume", "battery", "control-center", "session"]
+
+[shell.panel]
+control_center_placement = "floating"
+
+[shell.launcher]
+layout = "simple"
+
+[shell.session]
+grid = true
+
+[[shell.session.actions]]
+action = "lock"
+shortcut = "1"
+
+[[shell.session.actions]]
+action = "logout"
+shortcut = "2"
+
+[[shell.session.actions]]
+action = "lock_and_suspend"
+shortcut = "3"
+
+[[shell.session.actions]]
+action = "reboot"
+shortcut = "4"
+
+[[shell.session.actions]]
+action = "shutdown"
+variant = "destructive"
+shortcut = "5"
+
+[[shell.session.actions]]
+action = "command"
+label = "重启到安卓"
+glyph = "brand-android"
+shortcut = "6"
+command = "/usr/local/bin/cloudbook-switch-system"
+
+[lockscreen]
+lock_before_suspend = true
+transition = ["fade"]
+transition_duration = 300

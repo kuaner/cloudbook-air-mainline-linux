@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/bin/foot --config=/etc/niri/foot.ini "$@"

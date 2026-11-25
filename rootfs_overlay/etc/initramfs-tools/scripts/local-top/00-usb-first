@@ -21,14 +21,35 @@ ext4_label() {
     dd if="$1" bs=8 skip=143 count=2 2>/dev/null | tr -d '\000'
 }
 
-# Scripts in local-top run as child processes, so an exported ROOT never
-# reaches the parent. initramfs-tools sources /conf/param.conf after each
-# script, which is the supported way to override variables.
-for dev in /dev/sd*[0-9] /dev/sd* /dev/vd*[0-9] /dev/vd*; do
-    [ -b "$dev" ] || continue
-    if [ "$(ext4_label "$dev")" = "ROOTFS" ]; then
-        echo "CLOUDBOOK USB root found at $dev, preferring it over eMMC"
-        printf 'ROOT=%s\n' "$dev" >> /conf/param.conf
-        break
+usb_storage_connected() {
+    for interface in /sys/bus/usb/devices/*/bInterfaceClass; do
+        [ -r "$interface" ] || continue
+        read -r class < "$interface" || continue
+        [ "$class" = 08 ] && return 0
+    done
+    return 1
+}
+
+# USB storage can enumerate before its block device appears. On the fast eMMC
+# image, only wait for the disk scan if a mass-storage interface is present.
+read -r cmdline < /proc/cmdline
+attempt=0
+while :; do
+    for dev in /dev/sd*[0-9] /dev/sd* /dev/vd*[0-9] /dev/vd*; do
+        [ -b "$dev" ] || continue
+        if [ "$(ext4_label "$dev")" = "ROOTFS" ]; then
+            echo "CLOUDBOOK USB root found at $dev, preferring it over eMMC"
+            # initramfs-tools sources this file after each local-top script.
+            printf 'ROOT=%s\n' "$dev" >> /conf/param.conf
+            exit 0
+        fi
+    done
+    if [ "$attempt" -eq 0 ]; then
+        case " $cmdline " in
+            *' cloudbook.usb=present '*) usb_storage_connected || exit 0 ;;
+        esac
     fi
+    [ "$attempt" -lt 4 ] || break
+    sleep 1
+    attempt=$((attempt + 1))
 done

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command Linux rebuild: 6.12 LTS + 7.3.5, including boot.img and modules.
+# Rebuild both kernels, including modules, and the 6.12 boot images.
 #
 #   ./rebuild_linux.sh
 #

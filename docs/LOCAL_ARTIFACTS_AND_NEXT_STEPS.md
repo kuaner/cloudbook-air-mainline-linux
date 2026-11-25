@@ -82,4 +82,4 @@ python3 pack_boot_linux.py \
 
 早期 U 盘根盘使用 `LABEL=ROOTFS`，内置根盘使用 `LABEL=EMMC_ROOTFS`。原版 6.12 U 盘镜像使用 `cloudbook` 账户。整盘 ext4 识别与内屏早期排障见 [11 月 21 日的真机记录](LINUX_USB_BOOT_FAILURE_2026-11-21.md)。
 
-目前内置双系统使用 [p20 `userdata`、p21 `EMMC_ROOTFS`](P20_P21_DUAL_BOOT_PLAN.md)。7.3.5 镜像内的 initramfs 由 Debian `initramfs-tools` 生成，新版桌面使用 `kuaner`。构建与配套文件见 [7.3.5 桌面与 rootfs](../mainline-7.3/README.md#7-debian-桌面与-rootfs-构建)。
+内置双系统使用 p20 `userdata`、p21 `EMMC_ROOTFS`。当前 7.3.5 桌面使用 Ubuntu 自带的 `initramfs-tools` 生成引导所需的 initramfs。[分区布局](P20_P21_DUAL_BOOT_PLAN.md) · [Ubuntu 镜像构建](../mainline-7.3/README.md#7-ubuntu-桌面与-rootfs-构建)

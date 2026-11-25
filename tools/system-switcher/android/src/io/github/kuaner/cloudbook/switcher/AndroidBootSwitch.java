@@ -16,11 +16,24 @@ final class AndroidBootSwitch {
     private static final String EMPTY_COMMAND =
             "0000000000000000000000000000000000000000000000000000000000000000";
 
-    // These commands run only on this device through its authorized local adbd.
-    private static final String CHECK = String.format("""
+    private static final String REQUIRE_STOCK_ANDROID = """
             [ "$(id -u)" = 0 ] || exit 20
             [ "$(getprop ro.product.device)" = rk3568_r_w600d2 ] &&
                 [ "$(getprop ro.boot.slot_suffix)" = _b ] || exit 21
+            """;
+
+    // Power operations use the same authorized loopback connection as the slot switch.
+    private enum PowerRequest {
+        REBOOT("reboot"), SHUTDOWN("shutdown,userrequested");
+
+        final String value;
+
+        PowerRequest(String value) {
+            this.value = value;
+        }
+    }
+
+    private static final String CHECK = REQUIRE_STOCK_ANDROID + String.format("""
             by_name=/dev/block/by-name
             misc=$by_name/misc
             boot=$by_name/boot_a
@@ -46,6 +59,24 @@ final class AndroidBootSwitch {
         }
     }
 
+    void reboot() throws Exception {
+        requestPower(PowerRequest.REBOOT);
+    }
+
+    void shutdown() throws Exception {
+        requestPower(PowerRequest.SHUTDOWN);
+    }
+
+    private void requestPower(PowerRequest request) throws Exception {
+        try (LocalAdb connection = connect()) {
+            requestPower(connection, request);
+        }
+    }
+
+    private static void requestPower(LocalAdb connection, PowerRequest request) throws IOException {
+        rootShell(connection, REQUIRE_STOCK_ANDROID + "setprop sys.powerctl " + request.value);
+    }
+
     void rebootToLinux() throws Exception {
         try (LocalAdb connection = connect()) {
             String original = readRecord(connection);
@@ -63,9 +94,9 @@ final class AndroidBootSwitch {
                     """, original, BootRecord.escapedBytes(updated), updated,
                     BootRecord.escapedBytes(original), original));
             try {
-                rootShell(connection, "setprop sys.powerctl reboot");
+                requestPower(connection, PowerRequest.REBOOT);
             } catch (IOException error) {
-                throw new IOException("已设置下次启动进入 Debian。若系统未自动重启，请从 Android 电源菜单重启。", error);
+                throw new IOException("已设置下次启动进入 Linux。若系统未自动重启，请从 Android 电源菜单重启。", error);
             }
         }
     }
@@ -98,18 +129,19 @@ final class AndroidBootSwitch {
                 "; printf '\\n__CLOUDBOOK_EXIT__=%d\\n' $?");
         int marker = reply.lastIndexOf(EXIT_MARKER);
         if (marker == -1) {
-            throw new IOException("Android 未返回切换结果，请检查当前系统和 ADB 连接。");
+            throw new IOException("Android 未返回操作结果，请确认设备状态后再试。");
         }
         String status = reply.substring(marker + EXIT_MARKER.length()).trim();
         return switch (status) {
             case "0" -> reply.substring(0, marker).trim();
             case "21" -> throw new IOException("请从 CloudBook Air 的原厂 Android B 槽启动。");
-            case "22" -> throw new IOException("找不到支持的 Debian A 槽或内置 Linux 根分区。");
+            case "22" -> throw new IOException("找不到支持的 Linux A 槽或内置 Linux 根分区。");
             case "23" -> throw new IOException("启动控制区有待执行的命令，请先完成更新或恢复操作。");
             case "24" -> throw new IOException("槽位状态刚刚发生变化，请重新检查后再切换。");
             case "25" -> throw new IOException("写入校验失败，已恢复原槽位。");
             case "26" -> throw new IOException("写入校验和恢复均失败，请先检查槽位记录。");
-            default -> throw new IOException("原厂 Android 的 ADB shell 未能取得所需的 root 权限。");
+            case "20", "126", "127" -> throw new IOException("原厂 Android 的 ADB shell 未能取得所需的 root 权限。");
+            default -> throw new IOException("Android 拒绝执行操作，请检查原厂系统与 ADB 授权。");
         };
     }
 

@@ -12,7 +12,14 @@ DTS_NAME=rk3568-ecloudbook-air-24rtw
 DTS_SRC=${DTS_SRC:-"$ROOT_DIR/mainline-6.12/rk3568-ecloudbook-air-24rtw-v30-charging-led.dts"}
 JOBS=${JOBS:-$(nproc)}
 BUILD_MODULES=${BUILD_MODULES:-1}
+X11_DIRTYFB_WORKAROUND=${CLOUDBOOK_X11_DIRTYFB_WORKAROUND:-1}
 PORT_PATCH="$ROOT_DIR/mainline-7.3/cloudbook-7.3.5-port.patch"
+DIRTYFB_PATCH="$ROOT_DIR/mainline-7.3/0002-drm-rockchip-skip-dirtyfb-on-cloudbook-air.patch"
+
+case "$X11_DIRTYFB_WORKAROUND" in
+    0|1) ;;
+    *) echo 'CLOUDBOOK_X11_DIRTYFB_WORKAROUND must be 0 or 1' >&2; exit 2 ;;
+esac
 
 for tool in clang ld.lld llvm-ar llvm-nm llvm-objcopy make dtc; do
     command -v "$tool" >/dev/null || { echo "Missing required tool: $tool" >&2; exit 1; }
@@ -44,15 +51,25 @@ fi
 
 for board_patch in \
         "$ROOT_DIR/mainline-7.3/0001-drm-analogix-dp-pass-lane-count-to-phy.patch" \
-        "$ROOT_DIR/mainline-7.3/0002-drm-rockchip-skip-dirtyfb-on-cloudbook-air.patch" \
         "$ROOT_DIR/mainline-7.3/0003-bluetooth-handle-unsupported-local-pairing-options.patch" \
         "$ROOT_DIR/mainline-7.3/0004-power-sc2021-charger-wakeup.patch" \
+        "$ROOT_DIR/mainline-7.3/0005-mfd-rk8xx-use-soc-restart-on-cloudbook-air.patch" \
         "$ROOT_DIR/mainline-6.12/patches/0014-power-supply-sbs-align-charging-led-status.patch" \
         "$ROOT_DIR/mainline-6.12/patches/0015-rtc-rk808-use-gregorian-calendar-on-cloudbook-air.patch"; do
     if ! patch -d "$SRC_DIR" -p1 --dry-run --reverse --force < "$board_patch" >/dev/null; then
         patch -d "$SRC_DIR" -p1 --forward < "$board_patch"
     fi
 done
+
+if patch -d "$SRC_DIR" -p1 --dry-run --reverse --force < "$DIRTYFB_PATCH" >/dev/null; then
+    if [[ $X11_DIRTYFB_WORKAROUND = 0 ]]; then
+        patch -d "$SRC_DIR" -p1 --reverse --force < "$DIRTYFB_PATCH"
+    fi
+elif [[ $X11_DIRTYFB_WORKAROUND = 1 ]]; then
+    patch -d "$SRC_DIR" -p1 --forward < "$DIRTYFB_PATCH"
+else
+    patch -d "$SRC_DIR" -p1 --dry-run --forward < "$DIRTYFB_PATCH" >/dev/null
+fi
 
 mkdir -p "$OUT_DIR"
 if [[ ! -f "$OUT_DIR/.config" ]]; then

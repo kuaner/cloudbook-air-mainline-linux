@@ -4,9 +4,39 @@
 
 ## 2026-11-23 后续验证
 
-新版 rootfs 已构建出 `kuaner` 桌面、USB/eMMC 根镜像和通用 `boot_a` 镜像。图形切换已在真机往返验证，Debian 从 eMMC `p21` 挂载根盘。现行构建和安装方式见 [7.3.5 桌面与 rootfs](../mainline-7.3/README.md#7-debian-桌面与-rootfs-构建) 和 [双系统切换](../tools/system-switcher/README.md)。以下 `#9`、`#10` 与 Catppuccin 配置保留为 USB 阶段记录。
+当时的 Debian 构建生成了 `kuaner` 桌面、USB/eMMC 根镜像和通用 `boot_a` 镜像。图形切换已在真机往返验证，Debian 从 eMMC `p21` 挂载根盘。[Debian 桌面历史记录](USB_TEST_KIT_7.3.md) · [现行 Ubuntu 部署](FLASHING_GUIDE.md)
 
 v30 已纳入充电状态及休眠插拔处理。合盖后持续插电直到充满时，指示灯能否在开盖前变色，仍待完整充电实测。
+
+## 2026-11-25 niri 与 Noctalia 真机试跑
+
+A 槽通用引导已从 `/dev/sda` 挂载 USB 根文件系统。niri 使用内屏 `1920×1200@60 Hz` 和 `1.25` 缩放，Wayland EGL 报告 Mali-G52 Panfrost 硬件加速及 OpenGL ES 3.1。使用者确认触控板手势好用。
+
+从 eMMC 桌面发起重启时，再次出现黑屏后要手动按电源键才能启动的现象。eMMC 持久日志显示 `11:00:19` 收到重启请求，`11:00:22` 到达 `reboot.target`。手动按电源键后成功进入 USB 桌面，当次 USB 启动的 pstore 为空。内核进入系统重启后的板级状态仍待定位。
+
+切到 Noctalia 的网络面板时，对真机 niri 进程采样了 9 秒，记录了 25 次 `DRM_IOCTL_MODE_ATOMIC` 和 0 次 `DRM_IOCTL_MODE_DIRTYFB`。niri 26.04 的 Smithay DRM 后端通过 KMS 原子提交更新画面。保留给 i3/Xorg 的 `0002` 补丁可用 `CLOUDBOOK_X11_DIRTYFB_WORKAROUND=0` 从 niri 对照内核中省略。已生成独立引导候选，initramfs、RSCE、DTB 和启动参数与当前 USB 引导镜像逐字节相同。ARM64 QEMU 已从 USB 进入 Debian 登录，该候选的内屏效果待真机对照。
+
+Noctalia 已注册 NetworkManager 密码代理，niri 会话停用 `nm-applet` 后原 Wi-Fi 连接保持在线，托盘保留 Fcitx。Noctalia 5.6.0 在 `/proc/cpuinfo` 缺少 `model name` 时改用 `lscpu`，真机控制中心已显示 `Cortex-A55`。电源菜单已显示「重启到安卓」，真机目视确认了深色对话框与默认取消。运行了 Android B 槽只读检查，并用替代授权命令验证了取消和确认分支。
+
+Ghostty 1.4.0 需要桌面 OpenGL 4.3，真机 Panfrost 报告桌面 OpenGL 3.1。Ghostty 通过 Mesa llvmpipe 软件渲染运行，使用者反馈打字明显慢于 Foot。USB 镜像继续用 Foot 作为默认终端，快捷键为 `Super+Enter`。
+
+eMMC 首次启动日志显示，LightDM 在 Plymouth 所用的 VT1 上先关闭动画，再到 VT7 启动 Xorg。Noctalia 构建和已安装的 eMMC 系统改由 LightDM 在 VT1 接管 Plymouth，并为 Xorg 请求保留上一帧。QEMU 已走通保留动画的交接分支并进入登录界面，真机内屏的过渡效果待下次开机确认。
+
+Noctalia 镜像只提供 Niri 登录会话，清理 i3、Rofi、Polybar、XFCE Terminal 和旧的网络托盘等组件。Niri 使用 Foot、Thunar 与 Noctalia 控制中心。「重启到安卓」仍使用深色 Zenity 确认框。LightDM 的 GTK 登录界面运行在 Xorg 上，登录后的 Niri 会话通过 Xwayland 兼容需要 X11 的应用。
+
+随后手动开机已在真机确认开机动画保持到 LightDM 显示。该次开机的 LightDM greeter 等待 `user@100.service` 就绪约 12 秒。登录后 LightDM 切到 VT2，logind 自动启动了 `getty@tty2`，比 Niri 接管内屏早约 1.2 秒。已屏蔽图形会话使用的 VT1、VT2 上的 getty，VT3 到 VT6 仍可用作文本控制台。QEMU 已验证 Plymouth 保留开机动画，LightDM 登录后 Niri 正常在 VT2 接管，`getty@tty2` 未启动。
+
+同一轮重启日志显示，重启动画期间 Noctalia 的用户 scope 耗尽了默认 90 秒退出超时，随后 systemd 到达 `reboot.target`。已为 Noctalia scope 设置 5 秒退出超时，并让它在 Niri 之前退出。Foot 继续由桌面快捷键直接启动，已停用造成用户关机依赖环的 Foot server。真机验证了新超时会在 5 秒后结束不响应的进程。需要按电源键才能重新开机的现象在 90 秒等待结束之后发生，现有日志停在 systemd 的最后清理阶段，板级热重启仍待定位。
+
+复测中 Noctalia 正常退出，Linux 在发起重启后数秒内到达 `reboot.target`。机器仍需按电源键开机，关机交接时内屏仍闪过文字画面。随后启动的日志确认 `getty@tty2` 已屏蔽。对照内核 `#13` 对本机 RK809 跳过重启时的 SLP 引脚断电配置和 PMIC `DEV_RST`，交由 SoC 重启处理程序执行，保留 RK809 的关机处理程序。`#13` 和原 initramfs 已在 QEMU 进入 Debian，图形测试验证了限制内屏文字控制台到 VT3–VT6 后 Plymouth、LightDM 和 Niri 的交接。测试镜像已写入并读回核对 `boot_a`。[内核重启补丁](../mainline-7.3/0005-mfd-rk8xx-use-soc-restart-on-cloudbook-air.patch)
+
+使用者确认 `#13` 从 eMMC 正常自动重启，关机时内屏也没有再闪出 TTY。上一轮在北京时间 `12:52:32` 到达 `reboot.target`，下一轮在 `12:52:44` 开始启动，根盘仍为 `/dev/mmcblk0p21`。重启补丁已加入 7.3.5 内核构建。Noctalia 的 USB 与 eMMC 构建在 boot header 和 DTB 中都设置 `fbcon=vc:3-6` 与 `systemd.show_status=no`，常规镜像沿用原有的 ramoops 记录范围。[Noctalia 构建说明](FLASHING_GUIDE.md#4-验收与部署到-emmc)
+
+以真机验证过的 `#13` 重新打包内核、模块和 Noctalia 根镜像，交付目录为 `artifacts/7.3/noctalia/usb/` 和 `artifacts/7.3/noctalia/emmc/`。两套新镜像在 ARM64 QEMU 到达 `graphical.target` 和登录提示。同时接入两块盘时，USB 版选中了 `ROOTFS`。无 U 盘时，eMMC 版从 `EMMC_ROOTFS` 启动。下文的 `#9`、`#10` 镜像路径和哈希属于历史验证记录。
+
+## 2026-11-25 Ubuntu 26.04 试跑
+
+Ubuntu 26.04 LTS ARM64 的 Niri 26.04 和 Noctalia 5.6.0 在同一台机器从 USB 启动。Panfrost 的 OpenGL ES 3.1、H.264 和 HEVC 硬解、清华 APT 源和 RK809 默认音频均已检查。Niri 会话的 ScreenCast portal 已能创建会话。HDMI 音频仍待连接显示设备实测。Ubuntu 的两套镜像沿用 `#13` 重启修复，并在 ARM64 QEMU 启动到图形目标。[当前构建](../mainline-7.3/README.md#7-ubuntu-桌面与-rootfs-构建)
 
 ## 真机已经验证的能力
 
@@ -58,7 +88,7 @@ ARM64 QEMU（`-M virt` + virtio-blk + 8 GiB USB 镜像）已用该组合启动�
 ## 2026-11-22 留下的验证项
 
 - 后续桌面与 p21 启动结果见本文开头。充电指示灯、合盖唤醒和无线冷启动需按实际镜像分别验收。
-- 热重启曾出现电源灯熄灭、需要手动按电源键的现象。最近一次写入后，A 槽剩余尝试为 3，B 已标记启动成功。次数由引导器在后续启动时处理；停在黑屏或已断电时没有新的启动尝试。热重启停在哪一步仍需真机启动日志确认。
+- 热重启曾出现电源灯熄灭、需要手动按电源键的现象。该问题已在 11 月 25 日的 `#13` 真机验证中解决。
 - USB 根盘实际占用了配置为 host 的 OTG 控制器。当前 Linux 调试使用 SSH；同一接口同时提供有线 ADB 尚待解决。
 
 ## Android 14 可以复用的部分

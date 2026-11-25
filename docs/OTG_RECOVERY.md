@@ -4,7 +4,7 @@
 > **硬件配置**：无外置 TF 卡槽，Type-C 口旁边的 USB-A 口为 OTG 刷机口 (`dwc3@fcc00000`)；双公头 USB-A 线直连主机。  
 > **安全边界**：本机已启用 OTP 熔断安全启动（`fuse.programmed=1`、`androidboot.secureboot=1`）。`idbloader`（`RKSS`）与 `uboot_a/b`、`trust_a/b` 带硬件/RSA-2048 签名校验，**严禁使用未签名开源 SPL/U-Boot 覆盖前 8 MiB、`uboot_a/b`、`trust_a/b` 或 `security` 分区**。
 
-桌面和手机客户端都能运行时，优先使用 [Debian 与 Android 系统切换](../tools/system-switcher/README.md)。下面是无法用日常入口时的恢复途径。新版安装见 [7.3.5 刷机手册](FLASHING_GUIDE.md)。
+桌面和 Android 客户端都能运行时，可使用电源菜单切换系统。[Ubuntu 与 Android 系统切换](../tools/system-switcher/README.md) · [7.3.5 刷机手册](FLASHING_GUIDE.md)
 
 ## 1. 冷备份清单与校验
 
@@ -140,5 +140,5 @@ cmp /tmp/misc_restore_b.img /tmp/misc_readback.img
 
 ## 6. 系统仍可运行时的切换
 
-- 在 Debian i3 桌面打开电源菜单并选择「安卓」。如桌面入口不可用但 Debian 仍可登录，可以通过 `sudo /usr/local/sbin/cloudbook-mark-boot-successful check-android` 先检查 B 槽与 A/B 记录，检查通过后用 `sudo /usr/local/sbin/cloudbook-mark-boot-successful switch-to-android` 请求重启。
-- 从 Android B 切回 Debian 时，先使用 Android「切换系统」。若仍需手动设置 A 槽，使用[试启动记录写入步骤](FLASHING_GUIDE.md#3-首次写入-a-槽)，保留 B 槽回退。原有 Linux 引导镜像与根盘匹配时，可以直接设置试启动记录。
+- 在 Ubuntu 的 Noctalia 电源菜单选择「重启到安卓」。如桌面入口不可用但仍可登录，可以先运行 `sudo /usr/local/sbin/cloudbook-mark-boot-successful check-android` 检查 B 槽与 A/B 记录，检查通过后用 `sudo /usr/local/sbin/cloudbook-mark-boot-successful switch-to-android` 请求重启。
+- 从 Android B 切回 Ubuntu 时，打开「电源」并选择 Linux A 槽入口。原有 Linux 引导镜像与根盘匹配时，可以手动设置试启动记录并保留 B 槽回退。[试启动记录写入步骤](FLASHING_GUIDE.md#3-首次写入-a-槽)

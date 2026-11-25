@@ -1,6 +1,6 @@
 # CloudBook Air Linux 6.12.117 LTS 移植基线
 
-6.12.117 已完成内屏、基本外设、MT7663S 网络和 Hantro H.264 硬解移植。最小点亮过程和部分验收边界见 [早期实机记录](../docs/progress.md)。日常 Debian 13 i3 镜像见 [7.3.5 构建](../mainline-7.3/README.md)。
+6.12.117 已完成内屏、基本外设、MT7663S 网络和 Hantro H.264 硬解移植。[早期实机记录](../docs/progress.md) · [日用 Ubuntu 镜像构建](../mainline-7.3/README.md)
 
 ## 构建
 

@@ -15,16 +15,18 @@ if [[ ! -f "$android_jar" || ! -x "$tools/aapt2" ]]; then
     echo 'Install Android SDK Platform 35 and Build Tools 35.0.0.' >&2
     exit 1
 fi
-mkdir -p "$stage/classes" "$stage/assets" "$(dirname -- "$destination")"
+mkdir -p "$stage/classes" "$stage/generated" "$stage/assets" "$(dirname -- "$destination")"
 curl --fail --silent --show-error --location --max-time 60 \
     https://repo.maven.apache.org/maven2/com/tananaev/adblib/1.3/adblib-1.3.jar \
     -o "$stage/adblib.jar"
 cp "$repo/tools/system-switcher/ADBLIB-LICENSE.txt" "$stage/assets/"
+cp "$repo/tools/system-switcher/FEATHER-LICENSE" "$stage/assets/"
 "$tools/aapt2" compile --dir "$source_dir/res" -o "$stage/resources.zip"
 "$tools/aapt2" link -I "$android_jar" --manifest "$source_dir/AndroidManifest.xml" \
-    -A "$stage/assets" -o "$stage/unsigned.apk" "$stage/resources.zip"
+    --java "$stage/generated" -A "$stage/assets" -o "$stage/unsigned.apk" "$stage/resources.zip"
 javac -encoding UTF-8 --release 17 -classpath "$android_jar:$stage/adblib.jar" \
-    -d "$stage/classes" "$source_dir"/src/io/github/kuaner/cloudbook/switcher/*.java
+    -d "$stage/classes" "$stage/generated/io/github/kuaner/cloudbook/switcher/R.java" \
+    "$source_dir"/src/io/github/kuaner/cloudbook/switcher/*.java
 jar cf "$stage/classes.jar" -C "$stage/classes" .
 "$tools/d8" --release --min-api 30 --lib "$android_jar" --output "$stage" \
     "$stage/classes.jar" "$stage/adblib.jar"

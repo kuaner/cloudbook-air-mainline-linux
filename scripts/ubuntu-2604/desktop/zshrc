@@ -1,0 +1,8 @@
+export ZSH=/usr/local/share/oh-my-zsh
+ZSH_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/oh-my-zsh"
+ZSH_THEME=ys
+plugins=(git)
+
+# The image builder updates the system-wide Oh My Zsh installation.
+zstyle ':omz:update' mode disabled
+source "$ZSH/oh-my-zsh.sh"

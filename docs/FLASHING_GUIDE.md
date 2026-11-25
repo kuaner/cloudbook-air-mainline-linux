@@ -1,6 +1,6 @@
 # CloudBook Air 7.3.5 刷机与部署手册
 
-适用于 `CT2000-24RTW`（W620D V12.0、RK3568B2）。A 槽从内置 eMMC 的 `boot_a` 加载 Linux，B 槽保留原厂 Android 11。Debian 13 ARM64 可以先从 U 盘试跑，再部署到内置 p21。U 盘试跑首次仍需写入内置 `boot_a` 并设置启动槽。6.12 的 v28/v29 构建见 [6.12 移植基线](../mainline-6.12/README.md)。
+适用于 `CT2000-24RTW`（W620D V12.0、RK3568B2）。A 槽从内置 eMMC 的 `boot_a` 加载 Linux，B 槽保留原厂 Android 11。Ubuntu 26.04 LTS ARM64 可先从 U 盘试跑，再部署到内置 p21。A 槽已有识别 `ROOTFS` 的 `7.3.5-cloudbook` 时，从第 2 节开始。原厂 A 槽首次试跑需按第 1–3 节准备。[6.12 移植基线](../mainline-6.12/README.md)
 
 ## 1. 核对机型和备份
 
@@ -38,16 +38,24 @@
 
 ## 2. 准备配套镜像与试跑 U 盘
 
-用同一次 [7.3.5 桌面构建](../mainline-7.3/README.md#7-debian-桌面与-rootfs-构建) 生成的 `boot_linux_73_v30_auto.img` 和 `rootfs-7.3.5-cloudbook-usb.ext4`。安装已有本地镜像时，可以在输出目录运行 `shasum -a 256 -c SHA256SUMS` 核对完整性。按 [U 盘制作步骤](USB_TEST_KIT_7.3.md#2-制作-u-盘) 将 ext4 根镜像写到专用 U 盘。这一步覆盖 U 盘内容。
+使用 `usb/rootfs-ubuntu-26.04-niri-noctalia-usb.ext4` 写入一只容量至少为 8 GiB 的 U 盘，市售 16 GB 盘足够。该操作覆盖 U 盘内容。在 macOS 上，从仓库根目录运行以下命令，将 `diskN` 替换为 `diskutil list external physical` 中确认的 U 盘编号。[Ubuntu 镜像构建](../mainline-7.3/README.md#7-ubuntu-桌面与-rootfs-构建)
 
-已刷入配套的 v30 通用引导镜像且已选择 A 槽时，插着这只 U 盘重启即可。拔掉试跑盘后，通用镜像会改用内置卷标 `EMMC_ROOTFS`。如果内置 Linux 还没部署，保留 U 盘启动。
+```bash
+diskutil list external physical
+diskutil unmountDisk /dev/diskN
+sudo dd if=artifacts/7.3/ubuntu-26.04/usb/rootfs-ubuntu-26.04-niri-noctalia-usb.ext4 of=/dev/rdiskN bs=4m
+sync
+diskutil eject /dev/diskN
+```
+
+A 槽已刷入兼容的 `7.3.5-cloudbook` v30 通用引导且处于激活状态时，插着 U 盘开机即可。拔掉试跑盘后，通用引导会使用内置 `EMMC_ROOTFS`。内置 Linux 尚未部署时，保留 U 盘启动。macOS 如提示无法读取 ext4，选择「忽略」。
 
 ## 3. 首次写入 A 槽
 
-以下命令从主机执行，设备保持在已验证的 Android B。先完成上面的备份并核对大小。把 `boot_img` 指向同批生成的通用镜像，确认文件大于零且不超过 `boot_a` 大小。写入后只比对镜像覆盖的有效字节。
+以下命令从主机执行，设备保持在已验证的 Android B。使用第 1 节生成的 `snapshot`，将 `boot_img` 指向同批生成的 Ubuntu USB 引导。确认文件大小在 `boot_a` 容量以内。写入后只比对镜像覆盖的有效字节。
 
 ```bash
-boot_img=artifacts/7.3/desktop-kuaner/boot_linux_73_v30_auto.img
+boot_img=artifacts/7.3/ubuntu-26.04/usb/boot_linux_73_v30_ubuntu_2604_usb.img
 adb push "$boot_img" /data/local/tmp/cloudbook-boot-a.img
 adb shell su 0 dd if=/data/local/tmp/cloudbook-boot-a.img of=/dev/block/by-name/boot_a bs=4M conv=fsync
 adb exec-out su 0 cat /dev/block/by-name/boot_a > "$snapshot/boot_a.readback.img"
@@ -56,7 +64,7 @@ head -c "$(wc -c < "$boot_img" | tr -d '[:space:]')" "$snapshot/boot_a.readback.
 
 读回一致后，把试跑 U 盘插到 CloudBook 的 USB-A 接口，再选择首次启动方式。
 
-- **已有内置 p21，且 Android 已安装切换器**。打开「切换系统」，点击「检查启动状态」，校验通过后重启到 Debian。[图形切换和 ADB 授权](../tools/system-switcher/README.md)
+- **已有内置 p21，且 Android 已安装切换器**。打开「电源」，点击「检查启动状态」，校验通过后选择「Linux」。旧版 APK 中该入口显示为「Debian」。[图形切换和 ADB 授权](../tools/system-switcher/README.md)
 - **手动设置 U 盘试启动**。适用于还没有 p21 或未安装 Android 切换器的设备。先检查刚备份的 `misc` 中 B 槽已标记启动成功、A/B 记录 CRC 正确、BCB 区域无待执行的命令。以下只更新 A/B 记录，保留 `misc` 中其他内容。
 
   ```bash
@@ -87,14 +95,16 @@ head -c "$(wc -c < "$boot_img" | tr -d '[:space:]')" "$snapshot/boot_a.readback.
 
   手动写入的记录读回一致后，执行 `adb reboot`。
 
-初始 `tries_remaining=3` 是 A 槽计数，不能按固定三次整机重启理解。计数由引导器消耗，黑屏停住时它不会自动重启。Debian 挂载本地根盘后由 `cloudbook-mark-boot-successful.service` 标记实际启动槽。无法启动时见 [OTG 恢复手册](OTG_RECOVERY.md)。
+初始 `tries_remaining=3` 是引导器消耗的 A 槽尝试计数。Linux 挂载本地根盘后由 `cloudbook-mark-boot-successful.service` 标记实际启动槽。[OTG 恢复手册](OTG_RECOVERY.md)
 
 ## 4. 验收与部署到 eMMC
 
-登录 LightDM 后，用 `uname -r` 确认 `7.3.5-cloudbook`，用 `findmnt -n -o SOURCE /` 和 `lsblk -o NAME,LABEL,MOUNTPOINTS` 确认根盘是试跑 U 盘。账户、快捷键、Wi-Fi 与硬解检查见 [首次启动](USB_TEST_KIT_7.3.md#4-首次启动预期) 和 [验收清单](USB_TEST_KIT_7.3.md#5-验收清单)。
+默认用 `kuaner` 登录，初始密码为 `kuaner`。按 `Win+Enter` 打开 Foot，运行 `cat /etc/os-release` 确认 Ubuntu 26.04，运行 `uname -r` 确认 `7.3.5-cloudbook`，用 `findmnt -n -o SOURCE /` 和 `lsblk -o NAME,LABEL,MOUNTPOINTS` 确认根盘来自标记为 `ROOTFS` 的 U 盘。`Win+D` 打开应用菜单，`Win+S` 打开 Noctalia 控制中心。三指左右滑动浏览横向窗口列。验收时检查 Wi-Fi、视频播放、合盖和重启。
 
-内置部署使用 `rootfs-7.3.5-cloudbook-emmc.tar.zst`。若已有 p21，备份 Debian 数据后直接从 U 盘启动并[部署到现有 p21](P20_P21_DUAL_BOOT_PLAN.md#5-创建-linux-根文件系统)。首次划分 p20/p21 会清除原 `userdata`，先看[实机布局与分区条件](P20_P21_DUAL_BOOT_PLAN.md)。
+通过 U 盘验收后，从 U 盘启动并将 `emmc/rootfs-ubuntu-26.04-niri-noctalia-emmc.ext4` 写到未挂载的 `/dev/mmcblk0p21`，将 `emmc/boot_linux_73_v30_ubuntu_2604_emmc.img` 写到 `boot_a`。先用 `lsblk` 和 GPT 分区名核对 p21 与 `boot_a`，并确认目标容量。写入后对未挂载的 p21 运行 `e2fsck -f` 和 `resize2fs`，使文件系统使用整个分区。写入 ext4 镜像会覆盖 p21 上的旧系统。首次划分 p20/p21 会清除原 `userdata`。[实机布局与分区条件](P20_P21_DUAL_BOOT_PLAN.md)
 
-部署完成后，关机并拔掉 U 盘，再开机确认 `/` 挂载自 `/dev/mmcblk0p21`。Debian 电源菜单选择「安卓」可启动 B 槽。只切换系统保留 Debian 和 Android 各自的数据。[双系统切换](../tools/system-switcher/README.md)
+部署完成后，关机并拔掉 U 盘，再开机确认 `/` 挂载自 `/dev/mmcblk0p21`。Noctalia 电源菜单中选择「重启到安卓」可启动 B 槽。[双系统切换](../tools/system-switcher/README.md)
+
+eMMC 引导先检查已就绪的 `ROOTFS` U 盘。只有内核已枚举到 USB 存储接口时，才额外等至多四秒扫描盘符。未检测到存储时直接走 eMMC。较慢的 U 盘可尝试另一 USB 口。首次试跑引导始终提供这段扫描窗口。[镜像构建](../mainline-7.3/README.md#7-ubuntu-桌面与-rootfs-构建)
 
 如需恢复 Android 原始 userdata 镜像，先确认目标分区尺寸。旧的 `restore_factory_android.sh` 按约 22 GiB 的原厂 p20 写入，必须先恢复匹配的原厂 GPT 布局才能使用该全量镜像。需要保留 p21 时，使用现有 B 槽启动和适合当前 p20 尺寸的数据恢复方式。[恢复与回滚](P20_P21_DUAL_BOOT_PLAN.md#8-回滚)

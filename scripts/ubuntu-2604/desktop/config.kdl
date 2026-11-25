@@ -1,0 +1,73 @@
+input {
+    keyboard {
+        xkb {}
+    }
+    touchpad {
+        tap
+        dwt
+        natural-scroll
+        scroll-method "two-finger"
+        click-method "clickfinger"
+    }
+}
+
+layout {
+    gaps 10
+    always-center-single-column
+    default-column-width { proportion 0.66667; }
+    preset-column-widths {
+        proportion 0.5
+        proportion 0.66667
+        proportion 1.0
+    }
+    focus-ring {
+        width 2
+        active-color "#da6e89"
+        inactive-color "#545862"
+    }
+}
+
+spawn-at-startup "fcitx5"
+
+environment {
+    GTK_IM_MODULE null
+}
+
+hotkey-overlay {
+    skip-at-startup
+}
+
+cursor {
+    xcursor-theme "Qogirr-Dark"
+    xcursor-size 24
+}
+
+screenshot-path "~/Pictures/Screenshot from %Y-%m-%d %H-%M-%S.png"
+
+binds {
+    Mod+Return { spawn "/usr/local/bin/cloudbook-niri-terminal"; }
+    Mod+N { spawn "foot" "--config=/etc/niri/foot.ini" "--title=Wi-Fi" "nmtui-connect"; }
+    Mod+Shift+F { spawn "thunar"; }
+    Mod+Q { close-window; }
+    Mod+F { fullscreen-window; }
+    Mod+R { switch-preset-column-width; }
+    Mod+Left { focus-column-left; }
+    Mod+Right { focus-column-right; }
+    Mod+Shift+Left { move-column-left; }
+    Mod+Shift+Right { move-column-right; }
+    Mod+Up { focus-workspace-up; }
+    Mod+Down { focus-workspace-down; }
+    Mod+Shift+Up { move-column-to-workspace-up; }
+    Mod+Shift+Down { move-column-to-workspace-down; }
+    Mod+Tab { toggle-overview; }
+    Mod+Shift+Slash { show-hotkey-overlay; }
+    Print { screenshot; }
+
+    XF86MonBrightnessUp allow-when-locked=true { spawn "brightnessctl" "set" "+5%"; }
+    XF86MonBrightnessDown allow-when-locked=true { spawn "brightnessctl" "set" "5%-"; }
+    XF86AudioRaiseVolume allow-when-locked=true { spawn "pactl" "set-sink-volume" "@DEFAULT_SINK@" "+5%"; }
+    XF86AudioLowerVolume allow-when-locked=true { spawn "pactl" "set-sink-volume" "@DEFAULT_SINK@" "-5%"; }
+    XF86AudioMute allow-when-locked=true { spawn "pactl" "set-sink-mute" "@DEFAULT_SINK@" "toggle"; }
+}
+
+include "desktop.kdl"

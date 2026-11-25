@@ -1,0 +1,51 @@
+From: CloudBook Air maintainers <cloudbook@localhost>
+Subject: [PATCH] mfd: rk8xx: use SoC restart on CloudBook Air
+
+The mainline RK809 driver prepares the SLP input for power-down in its
+device shutdown callback and registers a DEV_RST handler ahead of PSCI.
+The Rockchip 4.19 driver only configures SLP for power-down during a
+power-off and leaves ordinary restarts to the SoC.
+
+Use that sequence on the CloudBook Air. Keep the PMIC's normal power-off
+handler and preserve the existing behaviour for other RK8xx boards.
+
+--- a/drivers/mfd/rk8xx-core.c
++++ b/drivers/mfd/rk8xx-core.c
+@@ -15,6 +15,7 @@
+ #include <linux/mfd/rk808.h>
+ #include <linux/mfd/core.h>
+ #include <linux/module.h>
++#include <linux/of.h>
+ #include <linux/property.h>
+ #include <linux/regmap.h>
+ #include <linux/reboot.h>
+@@ -733,10 +734,19 @@
+ 	return NOTIFY_DONE;
+ }
+ 
++static bool rk809_use_soc_restart(const struct rk808 *rk808)
++{
++	return rk808->variant == RK809_ID &&
++	       of_machine_is_compatible("zte,ecloudbook-air-24rtw");
++}
++
+ void rk8xx_shutdown(struct device *dev)
+ {
+ 	struct rk808 *rk808 = dev_get_drvdata(dev);
+ 	int ret;
++
++	if (system_state == SYSTEM_RESTART && rk809_use_soc_restart(rk808))
++		return;
+ 
+ 	switch (rk808->variant) {
+ 	case RK805_ID:
+@@ -884,6 +894,9 @@
+ 		switch (rk808->variant) {
+ 		case RK809_ID:
+ 		case RK817_ID:
++			if (rk809_use_soc_restart(rk808))
++				break;
++
+ 			ret = devm_register_sys_off_handler(dev,
+ 							    SYS_OFF_MODE_RESTART, SYS_OFF_PRIO_HIGH,
+ 							    &rk808_restart, rk808);

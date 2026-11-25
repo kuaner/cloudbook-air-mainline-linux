@@ -1,0 +1,11 @@
+<resources>
+    <color name="power_window">#171a21</color>
+    <color name="power_background">#1e222a</color>
+    <color name="power_tile">#292e39</color>
+    <color name="power_border">#363d49</color>
+    <color name="power_text">#c8ccd4</color>
+    <color name="power_secondary">#a9b0bd</color>
+    <color name="power_accent">#da6e89</color>
+    <color name="power_focus">#523044</color>
+    <color name="power_error">#f09ba2</color>
+</resources>

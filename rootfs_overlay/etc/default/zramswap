@@ -1,5 +1,5 @@
 # ZRAM-backed swap for the 4 GB CloudBook Air.
-# lz4 is built into the kernel (zstd would need the crypto module loaded).
-ALGO=lz4
+# Use the lzo-rle compressor supported by the board kernel.
+ALGO=lzo-rle
 PERCENT=50
 PRIORITY=100

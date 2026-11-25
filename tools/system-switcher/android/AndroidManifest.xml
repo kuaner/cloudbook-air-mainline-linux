@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="io.github.kuaner.cloudbook.switcher" android:versionCode="1" android:versionName="1.0">
+    package="io.github.kuaner.cloudbook.switcher" android:versionCode="3" android:versionName="1.2">
     <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="35" />
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:allowBackup="false" android:label="切换系统"
+    <application android:allowBackup="false" android:label="电源"
         android:icon="@drawable/ic_switch" android:theme="@style/SwitcherTheme">
         <activity android:name=".MainActivity" android:exported="true"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation">

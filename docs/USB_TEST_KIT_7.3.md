@@ -1,11 +1,13 @@
-# 7.3.5 U 盘试跑包
+# 7.3.5 Debian U 盘试跑记录
 
 > U-Boot 从内置 eMMC 的 A 槽加载 7.3.5 内核，Debian 桌面系统放在 U 盘上。Android B 槽用作回退。
 > 系统：Debian 13 (trixie) arm64 + 内核 `7.3.5-cloudbook`（VDPU346 + 全部板级补丁）
 
+当前试跑和内置部署使用 Ubuntu 26.04。[刷机手册](FLASHING_GUIDE.md) · [镜像构建](../mainline-7.3/README.md#7-ubuntu-桌面与-rootfs-构建)
+
 ## 1. 新版桌面试跑文件
 
-`scripts/build-rootfs-735.sh` 将以下文件写入指定的输出目录。构建命令和本地输入见 [7.3.5 桌面与 rootfs 构建](../mainline-7.3/README.md#7-debian-桌面与-rootfs-构建)。
+以下文件来自当时的 Debian 13 桌面构建。
 
 | 文件 | 用途 |
 | :--- | :--- |
@@ -93,7 +95,7 @@ sudo blkid /dev/sdX1   # 应显示 LABEL="ROOTFS"
 
 关机可按 `Win+Shift+E`，选「关机」后确认。登录界面也可用右上角的电源按钮。按 `Win+Shift+X` 或从合盖休眠唤醒后，在屏幕中央输入 Debian 登录密码，按 `Enter` 或点「解锁」。
 
-已部署到 eMMC p21 的双系统可以从 Debian 的电源菜单选择「安卓」。在 Android 中打开「切换系统」可以重启回 Debian。[图形切换与授权步骤](../tools/system-switcher/README.md)
+当时在 Debian 电源菜单选择「安卓」，在 Android 的「电源」应用选择「Debian」即可往返切换。[现行图形切换与授权步骤](../tools/system-switcher/README.md)
 
 时区为 `Asia/Shanghai`。联网后 `systemd-timesyncd` 依次尝试阿里云、Cloudflare 与 Debian 池的 NTP 源。运行 `timedatectl timesync-status` 可查看应答服务器和收到的数据包数；各 NTP 源均不可达时，系统会继续使用本地时钟，等待后续联网同步。
 
